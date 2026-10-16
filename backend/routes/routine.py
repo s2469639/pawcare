@@ -20,6 +20,19 @@ PROGRAMS = {
 }
 
 
+def _photo_stats(db, org_id: int, block_id: int, today: str) -> dict:
+    """이 구간 기록에 오늘 첨부된 사진을 반려견별로 센다: 공개됨(shared) / 공개 전(pending).
+    사진에 태그된 아이 기준이며, '공개됨'은 그 아이의 보호자에게 실제로 공개된 사진이다."""
+    stats: dict = {}
+    for r in db.execute(
+            "SELECT md.dog_id, EXISTS (SELECT 1 FROM media_shares s WHERE s.media_id=m.id AND s.dog_id=md.dog_id) AS shared "
+            "FROM media m JOIN care_records r ON r.id=m.record_id JOIN media_dogs md ON md.media_id=m.id "
+            "WHERE r.block_id=? AND r.org_id=? AND r.observed_at LIKE ?", (block_id, org_id, today)):
+        st = stats.setdefault(r["dog_id"], {"shared": 0, "pending": 0})
+        st["shared" if r["shared"] else "pending"] += 1
+    return stats
+
+
 def _blocks(db, org_id):
     return [dict(b) for b in db.execute("SELECT * FROM routine_blocks WHERE org_id=? ORDER BY sort_order", (org_id,))]
 
@@ -34,7 +47,10 @@ def routine(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_d
     for b in blocks:
         r = db.execute("SELECT COUNT(*) AS n, COUNT(DISTINCT dog_id) AS dogs, MAX(observed_at) AS last FROM care_records "
                        "WHERE block_id=? AND observed_at LIKE ?", (b["id"], today)).fetchone()
-        b.update(record_count=r["n"], dog_count=r["dogs"], last_at=r["last"], dogs_total=total)
+        b.update(record_count=r["n"], dog_count=r["dogs"], last_at=r["last"], dogs_total=total, share_prompt=bool(b["share_prompt"]))
+        if b["share_prompt"]:
+            att = {x["id"] for x in db.execute("SELECT id FROM dogs WHERE org_id=? AND attending=1", (org,))}
+            b["dogs_shared"] = sum(1 for d, st in _photo_stats(db, org, b["id"], today).items() if d in att and st["shared"])
     current = next((b["id"] for b in blocks if b["start_time"] <= hhmm < b["end_time"]), None)
     default = current
     if default is None:   # 영업시간 밖: 오늘 가장 최근에 기록이 있는 구간(없으면 첫 구간)을 보여준다
@@ -53,13 +69,14 @@ def block_detail(block_id: int, staff=Depends(current_staff), db: sqlite3.Connec
     if b is None:
         raise HTTPException(404, "일과 구간을 찾을 수 없습니다.")
     dogs = []
+    stats = _photo_stats(db, org, block_id, today) if b["share_prompt"] else {}
     for d in db.execute("SELECT id,name,breed,photo,avatar_color FROM dogs WHERE org_id=? AND attending=1 ORDER BY id", (org,)):
         recs = [dict(r) for r in db.execute(
             "SELECT r.id,r.record_type,r.structured_value,r.content,r.observed_at,s.name AS author_name FROM care_records r "
             "JOIN staff s ON s.id=r.author_id WHERE r.dog_id=? AND r.block_id=? AND r.observed_at LIKE ? "
             "ORDER BY r.observed_at DESC, r.id DESC", (d["id"], block_id, today))]
         open_tasks = db.execute("SELECT COUNT(*) FROM tasks WHERE dog_id=? AND action_status!='completed'", (d["id"],)).fetchone()[0]
-        dogs.append({**dict(d), "records": recs, "open_task_count": open_tasks})
+        dogs.append({**dict(d), "records": recs, "open_task_count": open_tasks, "photos": stats.get(d["id"], {"shared": 0, "pending": 0})})
     handoff = None
     if b["handoff_label"]:
         tasks = [task_dict(t) for t in db.execute(
@@ -68,4 +85,11 @@ def block_detail(block_id: int, staff=Depends(current_staff), db: sqlite3.Connec
                    "counts": {"pending": sum(t["acknowledgment_status"] == "pending" for t in tasks),
                               "todo": sum(t["acknowledgment_status"] == "acknowledged" and t["action_status"] == "todo" for t in tasks),
                               "in_progress": sum(t["action_status"] == "in_progress" for t in tasks)}}
-    return {"block": dict(b), "dogs": dogs, "with_record": sum(1 for d in dogs if d["records"]), "handoff": handoff}
+    share = None
+    if b["share_prompt"]:     # 사진 공유 시점: 이 구간 사진을 아직 보호자에게 공개하지 않은 아이를 보여준다
+        share = {"dogs_total": len(dogs),
+                 "dogs_shared": sum(1 for d in dogs if d["photos"]["shared"]),
+                 "dogs_pending": sum(1 for d in dogs if not d["photos"]["shared"] and d["photos"]["pending"]),
+                 "dogs_none": sum(1 for d in dogs if not d["photos"]["shared"] and not d["photos"]["pending"])}
+    return {"block": dict(b) | {"share_prompt": bool(b["share_prompt"])}, "dogs": dogs, "with_record": sum(1 for d in dogs if d["records"]),
+            "handoff": handoff, "share": share}

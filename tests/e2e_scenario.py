@@ -468,6 +468,40 @@ with sync_playwright() as p:
     switch_to("오전 담당자 · 한지우", "오늘의 업무")
     step("공개 승인: 사진별 공개 대상 선택(단체 사진은 직접 추가), 보호자에게 선택한 사진만·새 알림장 표시, 단체 사진엔 글 미노출, 취소하면 즉시 사라짐")
 
+    # 10-g. M5: 일과의 '사진 공유 시점' — 구간 기록에 사진을 붙이고, 공개 전/후 현황을 구간에서 확인
+    kst_today = page.evaluate("new Date(Date.now() + (new Date().getTimezoneOffset() + 540) * 60000).toISOString().slice(0, 10)")
+    page.goto(f"{BASE}/#/record/new?dog=1")
+    page.locator("#at").fill(f"{kst_today}T12:30")                                          # 점심·휴식 구간 시각의 기록
+    expect(page.locator("#block")).to_contain_text("자동 — 점심·휴식")
+    page.locator("#content").fill("M5 사진 공유 확인")
+    page.locator("#pa-file").set_input_files(p1); expect(page.locator(".pa-item")).to_have_count(1)
+    page.get_by_role("button", name="기록 저장").click()
+    expect(page.locator("#done")).to_contain_text("사진 1장을 첨부했습니다."); settle()
+    page.goto(f"{BASE}/#/routine"); page.locator(".rblock", has_text="점심·휴식").click()
+    expect(page.locator("#bt")).to_contain_text("점심·휴식")
+    expect(page.locator(".rblock", has_text="점심·휴식")).to_contain_text("사진 공유")
+    expect(page.locator(".share-card")).to_contain_text("사진 공유 시점")
+    expect(page.locator(".share-card")).to_contain_text("사진이 공개된 아이 0/")
+    bori = page.locator(".timeline li", has_text="보리").filter(has=page.get_by_text("공개 전 사진 1장"))
+    expect(bori).to_have_count(1)                                                           # 사진은 있지만 아직 공개 전
+    shot("30-routine-share-pending")
+    bori.get_by_role("link", name="공개 승인하러 가기").click()
+    expect(page.get_by_role("heading", name="보리", exact=True)).to_be_visible()
+    page.locator(".timeline").first.locator("li", has_text="M5 사진 공유 확인").get_by_role("button", name="보호자 공개 승인…").click()
+    expect(page.locator(".share-row")).to_have_count(1)
+    expect(page.locator(".share-row").get_by_label("보리의 보호자")).to_be_checked()
+    page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
+    expect(page.locator(".timeline").first).to_contain_text("보호자 공개됨 · 사진 1장"); settle()
+    page.goto(f"{BASE}/#/routine"); page.locator(".rblock", has_text="점심·휴식").click()
+    expect(page.locator("#bt")).to_contain_text("점심·휴식")
+    expect(page.locator(".rblock", has_text="점심·휴식")).to_contain_text("사진 공개 1/")
+    expect(page.locator(".share-card")).to_contain_text("사진이 공개된 아이 1/")
+    expect(page.locator(".timeline li", has_text="보리")).to_contain_text("사진 1장 공개됨")
+    shot("31-routine-share-done")
+    page.locator(".rblock", has_text="오전 교육·놀이").click()                                  # 사진 공유 시점이 아닌 구간에는 현황 카드가 없다
+    expect(page.locator("#bt")).to_contain_text("오전 교육·놀이"); expect(page.locator(".share-card")).to_have_count(0)
+    step("사진 공유 시점: 점심 구간에서 공개 전 사진이 있는 아이 확인 → 공개 승인 → 구간 현황(공개 N/M마리) 갱신, 다른 구간엔 현황 없음")
+
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
     pick("관리자 · 오하준")

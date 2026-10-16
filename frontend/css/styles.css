@@ -250,6 +250,7 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 .routine.compact .rblock { padding: 8px 10px; }
 .program { font-size: 13.5px; color: #3f4c37; background: var(--sage-tint); border: 1px solid #cdd5c1; border-radius: 99px; padding: 4px 12px; display: inline-flex; gap: 6px; align-items: center; }
 .handoff { border-color: var(--ink); margin-bottom: 8px; }
+.share-card { border-color: var(--sage); background: #fbfcf8; margin: 10px 0 8px; }
 /* ---------- photo field / cropper ---------- */
 .photo-row { display: flex; gap: 16px; align-items: center; }
 .photo-row .hint { max-width: 380px; }

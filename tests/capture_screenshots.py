@@ -108,6 +108,14 @@ with sync_playwright() as p:
     page.locator("#who").select_option(label="오후 담당자 · 서민재")
     expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
+    # 일과: 사진 공유 시점(점심 구간에 사진이 있는데 아직 공개 전인 아이)
+    kst_today = page.evaluate("new Date(Date.now() + (new Date().getTimezoneOffset() + 540) * 60000).toISOString().slice(0, 10)")
+    page.goto(f"{BASE}/#/record/new?dog=2"); page.locator("#at").fill(f"{kst_today}T12:30")
+    page.locator("#content").fill("점심을 먹고 낮잠 자기 전에 한 컷."); page.locator("#pa-file").set_input_files(ph[1]); expect(page.locator(".pa-item")).to_have_count(1)
+    page.get_by_role("button", name="기록 저장").click(); expect(page.locator("#done")).to_contain_text("사진 1장을 첨부했습니다.")
+    page.goto(f"{BASE}/#/routine"); page.locator(".rblock", has_text="점심·휴식").click()
+    expect(page.locator(".share-card")).to_be_visible(); page.wait_for_timeout(500); shot("30-routine-share", True)
+
     # 로그인 · 보호자 초대 · 가입
     page.goto(f"{BASE}/#/dogs/4"); page.get_by_role("button", name="초대 코드 만들기").click()
     expect(page.locator(".invite-code")).to_be_visible(); code = page.locator(".invite-code").inner_text().strip(); shot("20-invite-code")

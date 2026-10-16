@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS routine_blocks (
     description TEXT NOT NULL DEFAULT '',
     record_type TEXT,
     handoff_label TEXT,
-    sort_order INTEGER NOT NULL DEFAULT 0
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    share_prompt INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS dogs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -206,13 +207,14 @@ SAMPLE_PHOTOS = {"보리": "bori", "두부": "tofu", "모카": "mocha", "밤이"
 
 # 공통 일과 템플릿(일반적인 이름). (이름, 시작, 끝, 설명, 기본 기록 유형, 인계 표시)
 ROUTINE_TEMPLATE = [
-    ("등원·컨디션 체크", "08:00", "10:00", "도착한 아이의 컨디션과 보호자 전달사항을 확인합니다.", "특이사항", None),
-    ("오전 교육·놀이", "10:00", "12:00", "오전 프로그램을 진행하고 활동을 기록합니다.", "활동", None),
-    ("점심·휴식", "12:00", "13:00", "식사량과 배변 상태를 기록하고 휴식을 돕습니다.", "식사", None),
-    ("오후 산책·놀이", "13:00", "16:00", "오후 담당자가 이어받아 산책과 놀이를 진행합니다.", "활동", "오전 → 오후 담당자"),
-    ("그루밍·정리", "16:00", "17:00", "그루밍과 하원 전 정리를 합니다.", "기타", None),
-    ("하원 준비", "17:00", "20:00", "보호자 전달 내용을 정리하고 하원을 돕습니다.", "기타", None),
-]
+    ("등원·컨디션 체크", "08:00", "10:00", "도착한 아이의 컨디션과 보호자 전달사항을 확인합니다.", "특이사항", None, 0),
+    ("오전 교육·놀이", "10:00", "12:00", "오전 프로그램을 진행하고 활동을 기록합니다.", "활동", None, 0),
+    ("점심·휴식", "12:00", "13:00", "식사량과 배변 상태를 기록하고 휴식을 돕습니다. 보호자에게 보낼 사진을 남기는 시간입니다.", "식사", None, 1),
+    ("오후 산책·놀이", "13:00", "16:00", "오후 담당자가 이어받아 산책과 놀이를 진행합니다.", "활동", "오전 → 오후 담당자", 0),
+    ("그루밍·정리", "16:00", "17:00", "그루밍과 하원 전 정리를 합니다.", "기타", None, 0),
+    ("하원 준비", "17:00", "20:00", "보호자 전달 내용을 정리하고 하원을 돕습니다. 오늘의 마지막 사진을 보호자에게 공유하는 시간입니다.", "기타", None, 1),
+]   # (이름, 시작, 끝, 설명, 기본 기록 유형, 인계 표시, 사진 공유 시점 여부)
+SHARE_BLOCK_NAMES = ("점심·휴식", "하원 준비")
 
 
 def block_for(blocks: list, observed_at: str):
@@ -229,8 +231,8 @@ def ensure_routine(conn: sqlite3.Connection) -> None:
     for org in conn.execute("SELECT id FROM organizations").fetchall():
         if conn.execute("SELECT 1 FROM routine_blocks WHERE org_id=?", (org["id"],)).fetchone() is None:
             conn.executemany(
-                "INSERT INTO routine_blocks(org_id,name,start_time,end_time,description,record_type,handoff_label,sort_order)"
-                " VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO routine_blocks(org_id,name,start_time,end_time,description,record_type,handoff_label,share_prompt,sort_order)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
                 [(org["id"], *t, i) for i, t in enumerate(ROUTINE_TEMPLATE)])
         blocks = conn.execute("SELECT * FROM routine_blocks WHERE org_id=? ORDER BY sort_order", (org["id"],)).fetchall()
         for r in conn.execute("SELECT id, observed_at FROM care_records WHERE org_id=? AND block_id IS NULL", (org["id"],)).fetchall():
@@ -248,6 +250,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dogs ADD COLUMN photo TEXT")
         for name, f in SAMPLE_PHOTOS.items():
             conn.execute("UPDATE dogs SET photo=? WHERE name=? AND photo IS NULL", (f"assets/dogs/{f}.webp", name))
+    if "share_prompt" not in {r["name"] for r in conn.execute("PRAGMA table_info(routine_blocks)")}:
+        conn.execute("ALTER TABLE routine_blocks ADD COLUMN share_prompt INTEGER NOT NULL DEFAULT 0")
+        conn.execute(f"UPDATE routine_blocks SET share_prompt=1 WHERE name IN ({','.join('?' * len(SHARE_BLOCK_NAMES))})", SHARE_BLOCK_NAMES)
     if "consent_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}:
         conn.execute("ALTER TABLE dogs ADD COLUMN consent_at TEXT")
         # 샘플 반려견은 시연을 위해 동의를 받은 것으로 둔다(직접 등록한 반려견은 프로필에서 동의 확인 기록 필요)
