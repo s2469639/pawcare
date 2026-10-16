@@ -1,10 +1,71 @@
 # PawCare — AI Care Work Manager
 
-반려견 유치원·호텔 직원의 **돌봄 기록 → 후속 업무 → 담당자 확인 → 조치 완료**를 하나의 흐름으로 연결하는 업무 관리 웹앱 프로토타입입니다. (개인 포트폴리오용)
-
 > 돌봄의 맥락은 이어지고, 확인할 일은 명확해지도록.
 
-모든 반려견·보호자·직원 데이터는 **가상의 샘플**입니다. 실제 알림·메시지 전송, 로그인, 결제 등은 구현하지 않았고 구현된 것처럼 표시하지도 않습니다.
+반려견 유치원·호텔 직원의 **돌봄 기록 → 후속 업무 → 담당자 확인 → 조치 완료**를 하나의 흐름으로 연결하는 업무 관리 웹앱 프로토타입입니다. 개인 포트폴리오용이며, 모든 반려견·보호자·직원 데이터는 **가상의 샘플**입니다.
+
+![오늘의 업무 대시보드](docs/screenshots/02-dashboard.png)
+
+## 이 프로토타입이 보여주려는 것
+
+기록이 작성됐다는 사실과 *필요한 일이 실제로 처리됐다*는 사실은 다릅니다. PawCare는 이 둘을 분리해서 다룹니다.
+
+> 가설(사용자 조사로 검증된 사실이 아님): 돌봄 정보가 메신저·구두 전달에 흩어지면, 다음 담당자가 확인했는지, 실제 조치가 끝났는지 알기 어렵다.
+
+| 질문 | PawCare의 답 |
+|---|---|
+| 기록이 업무가 되려면? | 기록 저장만으로는 업무가 생기지 않습니다. 직원이 후속 업무를 **직접 승인**해야 합니다. |
+| AI는 무엇을 하나? | 기록에서 후속 확인 사항을 **제안**만 합니다. 진단하지 않고, 기록에 없는 사실을 만들지 않으며, 직원이 승인하기 전에는 업무가 아닙니다. |
+| 확인했다 = 끝났다? | 아닙니다. **확인 상태**(`pending` / `acknowledged`)와 **조치 상태**(`todo` / `in_progress` / `completed`)는 별개이며, 조치 완료에는 실제 조치 결과 입력이 필요합니다. |
+| 보호자에게는? | 직원이 문구를 검토하고 **공개 승인**한 기록만 보입니다. 내부 메모·인계 내용은 비공개입니다. |
+
+## 시연 흐름
+
+아래 순서가 그대로 실제 버튼 조작으로 진행됩니다. (`tests/capture_screenshots.py`가 이 순서로 화면을 자동 캡처했습니다.)
+
+### 1. 역할 선택 → 직원 대시보드
+![역할 선택](docs/screenshots/01-role-select.png)
+
+요약 숫자(돌봄 중, 확인 필요, 진행 중, 완료)는 DB에서 계산됩니다. 업무는 *확인 대기 → 조치 필요 → 진행 중 → 완료* 순서로 정렬되고, 완료된 업무는 일부러 덜 강조합니다. 상태는 색뿐 아니라 아이콘과 텍스트로도 표시합니다.
+
+### 2. 반려견 프로필 · 기록 작성
+| 반려견 목록 (검색·필터) | 프로필 (장기 참고사항 / 오늘 기록 / 업무) |
+|---|---|
+| ![반려견 목록](docs/screenshots/03-dogs.png) | ![반려견 프로필](docs/screenshots/04-dog-profile.png) |
+
+프로필의 *지속적으로 확인해야 할 돌봄 정보*는 오늘의 기록과 구분되며, AI가 자동으로 바꾸지 않습니다.
+
+![빠른 기록 작성](docs/screenshots/05-record-form.png)
+
+기록 유형별 선택지로 빠르게 남깁니다. 선택한 값만으로 건강 이상을 판단하지 않습니다.
+
+### 3. AI 후속 업무 제안 (직원이 검토·확정)
+![AI 제안](docs/screenshots/06-ai-suggestion.png)
+
+*기록에 있는 사실*과 *제안한 행동*을 나눠 보여주고, 근거 문장을 원문 그대로 인용합니다. **업무로 등록 / 수정하기 / 제안 무시** 중 직원이 고릅니다. API 키가 없으면 "데모 분석(규칙 기반 · 실제 AI 아님)"이라고 표시합니다.
+
+### 4. 담당자 인계 → 확인 → 조치
+| 오전 담당자로 열람 | 오후 담당자로 전환해 확인 완료 |
+|---|---|
+| ![확인 대기](docs/screenshots/07-task-pending-as-morning.png) | ![확인 완료, 조치 필요 유지](docs/screenshots/08-task-acknowledged.png) |
+
+담당자가 아니면 처리 버튼이 잠기고 이유가 표시됩니다. 오른쪽에서 확인 완료가 되어도 **조치 상태는 "조치 필요" 그대로**입니다.
+
+![조치 완료](docs/screenshots/09-task-completed.png)
+
+조치 결과를 입력해야 완료할 수 있고, 완료 시각과 변경 이력이 남습니다.
+
+### 5. 모든 화면에 같은 상태가 반영
+| 대시보드 | 업무 인계 목록 |
+|---|---|
+| ![대시보드 갱신](docs/screenshots/10-dashboard-after.png) | ![업무 인계 목록](docs/screenshots/11-task-handoff-list.png) |
+
+### 6. 보호자 미리보기 · 모바일
+| 보호자 미리보기 (승인된 문구만) | 모바일 폭 |
+|---|---|
+| ![보호자 미리보기](docs/screenshots/12-parent-preview.png) | ![모바일](docs/screenshots/13-mobile-dashboard.png) |
+
+보호자 화면은 미리보기일 뿐이며 실제로 전송되지 않습니다.
 
 ## 실행 방법
 
@@ -14,57 +75,59 @@ uvicorn backend.main:app --reload      # http://localhost:8000
 ```
 
 - 첫 실행 시 `pawcare.db`(SQLite)가 만들어지고 샘플 데이터가 자동 등록됩니다.
-- 화면 좌측 하단 **데모 데이터 초기화**로 언제든 처음 상태로 되돌릴 수 있습니다.
-- (선택) AI 연동: `.env.example`을 `.env`로 복사해 `GEMINI_API_KEY`, `GEMINI_MODEL`을 채우면 서버에서 Gemini를 호출합니다. **비워 두면 규칙 기반 '데모 분석'으로 동작하며 UI에 그렇게 표시됩니다.** 키는 서버 환경변수로만 쓰이고 프런트엔드로 전달되지 않습니다.
+- 화면 왼쪽 아래 **데모 데이터 초기화**로 처음 상태로 되돌릴 수 있습니다.
+- 상단의 **시연 담당자** 드롭다운으로 오전/오후 담당자·관리자를 전환합니다. (로그인 대체)
 
-## 시연 시나리오 (모두 실제 버튼 조작)
+### AI 연동 (선택)
 
-1. 역할 선택에서 **선생님으로 시작하기** → 오늘의 업무 대시보드(숫자는 DB에서 계산)
-2. 반려견 → **보리** → **돌봄 기록 작성**(배변 · 평소와 다름 + 메모) → 기록 저장
-3. **후속 업무 제안 받기** → AI(데모 분석)가 *오후 배변 상태 확인* 제안
-4. **제안 무시**(업무 미생성) / **수정하기** / **업무로 등록**(원본 기록과 연결)
-5. 상단 *시연 담당자*를 **오후 담당자 · 서민재**로 전환 → 업무 상세에서 **확인 완료**
-   (확인 상태만 바뀌고 조치 상태는 *조치 필요* 유지)
-6. **조치 시작** → 조치 결과 입력(필수) → **조치 완료** (완료 시각 저장)
-7. 대시보드 · 업무 인계 · 반려견 프로필에 같은 상태가 반영됨
+`.env.example`을 `.env`로 복사하고 `GEMINI_API_KEY`, `GEMINI_MODEL`을 채우면 서버에서 Gemini를 호출합니다. 비워 두면 규칙 기반 **데모 분석**으로 동작합니다. 키는 서버 환경변수로만 쓰이며 프런트엔드로 전달되지 않습니다. 호출이 실패하면 데모 분석으로 대체되고 화면에 그 사실이 표시됩니다.
 
-## 핵심 설계 원칙
-
-| 원칙 | 구현 |
-|---|---|
-| 기록 ≠ 업무 처리 | 기록 저장만으로 업무가 생기지 않음. 확인(`pending`/`acknowledged`)과 조치(`todo`/`in_progress`/`completed`)는 **별개 컬럼** |
-| AI는 제안, 직원이 확정 | 제안은 DB에 저장되지 않음. 직원이 *업무로 등록*해야 업무가 생성됨 |
-| AI 안전장치 | 근거 문장은 원본 기록에 실제 있는 문장만 허용, 진단·투약 표현이 있는 제안은 폐기, 정보가 부족하면 제안하지 않고 사유 표시, 담당자는 기록에 근거가 있을 때만 지정 |
-| 담당자 인계 | 확인·조치는 담당자(또는 관리자, 미지정 업무)만 가능. 담당자를 바꿔도 상태는 유지되고 이력이 남음 |
-| 보호자 공개 범위 | 직원이 문구를 검토·**공개 승인**한 기록만 미리보기에 표시. 내부 메모·업무 인계·AI 초안은 비공개 |
-| 회사(유치원) 단위 구조 | 모든 데이터가 `org_id`로 분리됨. 다른 유치원 직원은 데이터에 접근 불가 |
+모델 응답은 그대로 쓰지 않고 검증합니다. 원본 기록에 없는 근거 문장이 있거나 진단·투약 표현이 있는 제안은 버립니다.
 
 ## 구조
 
 ```
-backend/   FastAPI + SQLite (database.py, schemas.py, deps.py, seed.py, routes/, services/ai_service.py)
-frontend/  Vanilla JS(ES modules) SPA + 직접 작성한 CSS (디자인 토큰: Ivory/Sage/Forest Ink/Clay)
-tests/     pytest(API) + e2e_scenario.py(브라우저 시나리오)
+backend/    FastAPI + SQLite
+            database.py  schemas.py  deps.py  seed.py
+            routes/      dogs · records · tasks · ai · misc
+            services/    ai_service.py (데모 분석 + Gemini + 출력 검증)
+frontend/   Vanilla JS(ES modules) SPA, 직접 작성한 CSS (Ivory · Sage · Forest Ink · Clay)
+tests/      pytest(API) · e2e_scenario.py(브라우저) · capture_screenshots.py
+docs/       시연 화면 캡처
 ```
 
-주요 API: `GET /api/dashboard`, `GET/PATCH /api/dogs…`, `GET/POST /api/records`, `GET/POST/PATCH /api/tasks`, `POST /api/tasks/{id}/actions`(acknowledge · start · complete · comment), `POST /api/ai/suggest-tasks`, `PATCH /api/records/{id}/parent-approval`, `/api/parent/…`.
-현재 직원은 `X-Staff-Id` 헤더로 식별합니다(데모용). 오류는 한국어 메시지와 필드별 `errors`로 반환됩니다.
+**데이터 모델:** `organizations`, `staff`, `dogs`, `care_records`(보호자 공개 상태 포함), `tasks`(`source_record_id`로 원본 기록 연결), `task_action_logs`.
+모든 데이터는 `org_id`(유치원)로 분리되어, 다른 유치원 직원은 접근할 수 없습니다.
 
-데이터 모델: `organizations`, `staff`, `dogs`, `care_records`(보호자 공개 상태 포함), `tasks`(`source_record_id`로 원본 기록 연결), `task_action_logs`.
+**주요 API**
+
+| | |
+|---|---|
+| `GET /api/dashboard` | 요약 숫자와 정렬된 업무 목록 |
+| `GET /api/dogs` · `GET/PATCH /api/dogs/{id}` | 목록(검색·상태 필터), 상세·프로필 수정 |
+| `GET/POST /api/records` | 기록 조회·생성 |
+| `PATCH /api/records/{id}/parent-approval` | 보호자 공개 승인/취소 |
+| `GET/POST /api/tasks` · `GET/PATCH /api/tasks/{id}` | 업무 조회·생성·담당자/내용 변경 |
+| `POST /api/tasks/{id}/actions` | `acknowledge` · `start` · `complete`(결과 필수) · `comment` |
+| `POST /api/ai/suggest-tasks` | 제안 반환(저장하지 않음) |
+
+현재 직원은 `X-Staff-Id` 헤더로 식별합니다(데모용). 오류는 한국어 메시지와 필드별 `errors`로 반환합니다.
 
 ## 테스트
 
 ```bash
-python -m pytest -q                                   # API·규칙 15개
-python tests/e2e_scenario.py                          # 서버 실행 후, Playwright 필요: pip install playwright
+python -m pytest -q                     # API·규칙 15개
+pip install playwright                  # e2e 및 캡처에 필요
+python tests/e2e_scenario.py            # 서버 실행 후. 실제 브라우저로 전체 시나리오 검증
+python tests/capture_screenshots.py     # docs/screenshots 재생성
 ```
 
-e2e는 샘플 데이터를 초기화한 뒤 위 시나리오 전체(기록 저장, AI 제안 무시/수정/승인, 담당자 전환, 확인·조치 분리, 새로고침 유지, 오류 처리, 보호자 미리보기, 유치원 간 격리, 390px 모바일 가로 스크롤 없음, 콘솔 오류 없음)를 실제 브라우저로 검증합니다.
+e2e는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수정/승인, 담당자 전환, 확인·조치 분리, 새로고침 후 데이터 유지, 입력 오류, 없는 ID 처리, 보호자 미리보기, 유치원 간 격리, 390px 가로 스크롤 없음, 콘솔 오류 없음을 확인합니다.
 
-## 한계 / 아직 하지 않은 것
+## 한계
 
-- 로그인·회원가입 없음: 상단 *시연 담당자* 드롭다운이 로그인을 대신합니다. `org_id` 분리와 `X-Staff-Id` 의존성이 실제 인증으로 교체될 자리입니다.
-- Gemini 호출 경로는 이 개발 환경에 키가 없어 **실제 호출은 검증하지 못했습니다.** 응답 검증 로직(`sanitize_model_output`)과 실패 시 데모 분석으로의 대체 동작만 테스트했습니다.
-- 푸시/카카오 알림, 예약·결제, 음성, CCTV, 의료 연동, 실시간 다중 사용자 동기화는 범위 밖입니다. 상단의 알림 아이콘은 내게 배정된 확인 대기 업무 수를 보여 줄 뿐 실제 푸시가 아닙니다.
-- 보호자 화면은 승인된 기록 미리보기까지입니다(실제 전송 없음).
-- 시각 표시는 한국 표준시(KST) 기준입니다.
+- **로그인·회원가입 없음.** `org_id` 분리와 `X-Staff-Id` 의존성이 실제 인증으로 바뀔 자리입니다.
+- **Gemini 실제 호출은 검증하지 못했습니다.** 개발 환경에 키가 없어, 출력 검증 로직과 실패 시 데모 분석으로의 대체 동작만 테스트했습니다.
+- 푸시/카카오 알림, 예약·결제, 음성, CCTV, 의료 연동, 실시간 다중 사용자 동기화는 범위 밖입니다. 상단 알림 아이콘은 내게 배정된 확인 대기 업무 수를 보여줄 뿐 실제 푸시가 아닙니다.
+- 보호자 화면은 승인된 기록 미리보기까지입니다. 시각은 한국 표준시(KST) 기준입니다.
+- 샘플 데이터의 "알레르기·민감성" 등은 시연용 가상 정보이며 실제 건강 정보가 아닙니다.

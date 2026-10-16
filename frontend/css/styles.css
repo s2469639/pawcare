@@ -27,7 +27,7 @@ svg.i { width: 16px; height: 16px; flex: none; vertical-align: -3px; fill: none;
 /* ---------- buttons ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--ink); background: var(--ink);
   color: var(--ivory); padding: 8px 14px; border-radius: 8px; font-weight: 500; font-size: 14px; cursor: pointer; text-decoration: none;
-  transition: background .15s, transform .05s; min-height: 38px; line-height: 1.2; }
+  transition: background .15s, transform .05s; min-height: 38px; line-height: 1.2; white-space: nowrap; flex-shrink: 0; }
 .btn:hover { background: #1b2a23; } .btn:active { transform: translateY(1px); }
 .btn.secondary { background: var(--white); color: var(--ink); border-color: #cfccc0; }
 .btn.secondary:hover { background: var(--paper); }

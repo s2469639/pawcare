@@ -120,7 +120,7 @@ export async function taskDetailView(ctx) {
         <div class="card"><h3>담당자</h3>
           <p style="margin:6px 0 10px">${t.assignee_name ? html`<b>${t.assignee_name}</b> <span class="muted">${t.assignee_role}</span>` : '미지정'}</p>
           ${done ? '' : html`<label class="small muted" for="asg">담당자 변경</label>
-          <div style="display:flex;gap:6px;margin-top:4px"><select id="asg" class="input"><option value="">미지정</option>${members.map((m) => html`<option value="${m.id}" ${m.id === t.assignee_id ? 'selected' : ''}>${m.role} · ${m.name}</option>`)}</select><button class="btn secondary" id="reassign">변경</button></div>
+          <div style="display:flex;gap:6px;margin-top:4px"><select id="asg" class="input" style="min-width:0"><option value="">미지정</option>${members.map((m) => html`<option value="${m.id}" ${m.id === t.assignee_id ? 'selected' : ''}>${m.role} · ${m.name}</option>`)}</select><button class="btn secondary" id="reassign">변경</button></div>
           <p class="tiny muted" style="margin-top:6px">담당자를 바꿔도 확인·조치 상태는 그대로 유지됩니다.</p>`}
           <hr class="sep"><p class="small muted">등록 ${t.creator_name} (${t.creator_role})<br>${fmtWhen(t.created_at)}</p></div>
         <div class="card"><h3 style="margin-bottom:10px">변경 이력</h3>
