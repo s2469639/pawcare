@@ -178,3 +178,11 @@ def test_reset(client):
     client.post("/api/tasks", headers=MORNING, json={"dog_id": BORI, "title": "임시"})
     assert client.post("/api/demo/reset").status_code == 200
     assert len(client.get("/api/tasks", headers=ADMIN).json()) == 4
+
+
+def test_only_assignee_or_admin_can_act(client):
+    r = client.post("/api/tasks/1/actions", json={"action_type": "acknowledge"}, headers=MORNING)  # 담당: 오후 담당자
+    assert r.status_code == 403 and "서민재" in r.json()["detail"]
+    assert client.get("/api/tasks/1", headers=MORNING).json()["acknowledgment_status"] == "pending"
+    assert client.post("/api/tasks/1/actions", json={"action_type": "comment", "note": "메모"}, headers=MORNING).status_code == 200
+    assert client.post("/api/tasks/1/actions", json={"action_type": "acknowledge"}, headers=ADMIN).status_code == 200

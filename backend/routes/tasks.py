@@ -16,6 +16,11 @@ def _log(db, task_id: int, actor_id: int, typ: str, note: Optional[str]):
                (task_id, actor_id, typ, note, now_iso()))
 
 
+def can_act(staff: dict, task: dict) -> bool:
+    """확인·조치는 담당자, 관리자, 또는 담당자 미지정 업무에서만 가능(전체 권한 시스템은 범위 밖)."""
+    return task["assignee_id"] is None or task["assignee_id"] == staff["id"] or staff["role"] == "관리자"
+
+
 def _load(db, task_id: int, org_id: int) -> dict:
     r = db.execute(TASK_SELECT + " WHERE t.id=? AND t.org_id=?", (task_id, org_id)).fetchone()
     if r is None:
@@ -106,6 +111,8 @@ def task_action(task_id: int, body: ActionCreate, staff=Depends(current_staff),
     org, now = staff["org_id"], now_iso()
     t = _load(db, task_id, org)
     a = body.action_type
+    if a != "comment" and not can_act(staff, t):
+        raise HTTPException(403, f"담당자({t['assignee_name']})만 처리할 수 있습니다. 담당자를 변경하거나 해당 직원으로 전환해 주세요.")
     if a == "acknowledge":
         if t["acknowledgment_status"] == "acknowledged":
             raise HTTPException(409, "이미 확인한 업무입니다.")

@@ -17,7 +17,7 @@ def now_iso() -> str:
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path())
+    conn = sqlite3.connect(db_path(), check_same_thread=False)  # 요청 1개 = 연결 1개(순차 사용)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
