@@ -46,6 +46,7 @@ export async function dogDetailView(ctx) {
     throw e;
   }
   const open = d.tasks.filter((t) => t.action_status !== 'completed');
+  const g = await api.guardians(d.id);
   root.innerHTML = html`
     <a class="crumb" href="#/dogs">${icon('back')} 반려견 목록</a>
     <div class="card"><div class="dog-head">${avatar(d, 'lg')}
@@ -68,10 +69,26 @@ export async function dogDetailView(ctx) {
         : html`<div style="padding:14px 0">${empty('오늘 작성된 기록이 없습니다', '', html`<br><a class="btn" href="#/record/new?dog=${d.id}">돌봄 기록 작성</a>`)}</div>`}</div></section>
 
     <section class="section" id="dog-tasks"><div class="head"><h2>처리해야 할 업무</h2></div>
-      ${d.tasks.length ? html`<div class="task-list">${d.tasks.map((t) => taskRow(t, staff, { showDog: false }))}</div>` : empty('이 반려견의 업무가 없습니다', '기록을 바탕으로 후속 업무를 만들 수 있습니다.')}</section>`.toString();
+      ${d.tasks.length ? html`<div class="task-list">${d.tasks.map((t) => taskRow(t, staff, { showDog: false }))}</div>` : empty('이 반려견의 업무가 없습니다', '기록을 바탕으로 후속 업무를 만들 수 있습니다.')}</section>
+
+    <section class="section" id="guardians" aria-labelledby="gt"><div class="head"><h2 id="gt">보호자 계정</h2><button class="btn secondary" id="invite">${icon('plus')} 초대 코드 만들기</button></div>
+      <div class="panel" style="padding:4px 18px">
+        ${g.guardians.length ? html`<ul class="timeline">${g.guardians.map((p) => html`<li style="grid-template-columns:1fr auto"><div><b>${p.name}</b> <span class="small muted">${p.email}</span></div><span class="badge b-ack">${icon('check')} 가입됨</span></li>`)}</ul>`
+          : html`<p class="muted small" style="padding:14px 0">아직 가입한 보호자가 없습니다. 초대 코드를 만들어 보호자에게 전달해 주세요.</p>`}
+        ${g.invites.length ? html`<hr class="sep" style="margin:0"><p class="small muted" style="padding:10px 0 2px">최근 초대 코드 (코드 원문은 만든 직후 한 번만 볼 수 있습니다)</p>
+          <ul class="timeline">${g.invites.map((i) => html`<li style="grid-template-columns:1fr auto;align-items:center"><div class="small">${fmtWhen(i.created_at)} 생성 · ${i.status === 'used' ? `${fmtWhen(i.used_at)} 사용됨` : `${fmtWhen(i.expires_at)}까지`}</div>
+            <div>${i.status === 'active' ? html`<span class="badge b-pending">${icon('clock')} 사용 대기</span> <button class="btn sm ghost" data-revoke-invite="${i.id}">취소</button>` : i.status === 'used' ? html`<span class="badge b-done">${icon('check')} 사용됨</span>` : html`<span class="badge b-done">만료됨</span>`}</div></li>`)}</ul>` : ''}
+      </div></section>`.toString();
 
   root.querySelector('#goto-tasks').addEventListener('click', () => root.querySelector('#dog-tasks').scrollIntoView({ behavior: 'smooth' }));
   root.querySelector('#edit').addEventListener('click', () => profileModal(ctx, d));
+  root.querySelector('#invite').addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
+    const inv = await api.createInvite(d.id);
+    inviteModal(ctx, inv);
+  })));
+  root.querySelectorAll('[data-revoke-invite]').forEach((b) => b.addEventListener('click', () => busy(b, () => guarded(async () => {
+    await api.revokeInvite(+b.dataset.revokeInvite); toast('초대 코드를 취소했습니다.'); ctx.rerender();
+  }))));
   bindTaskActions(root, ctx);
   root.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', () => approveModal(ctx, d.records_today.find((r) => r.id === +b.dataset.approve))));
   root.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => busy(b, () => guarded(async () => { await api.parentApproval(+b.dataset.revoke, { action: 'revoke' }); toast('보호자 공개를 취소했습니다.'); ctx.rerender(); }))));
@@ -168,5 +185,24 @@ function registerDogModal(ctx) {
         });
       });
     },
+  });
+}
+
+/** 초대 코드는 이 창에서 한 번만 보여준다(서버에는 해시만 저장됨). */
+function inviteModal(ctx, inv) {
+  const link = `${location.origin}/#/register`;
+  openModal({
+    title: `${inv.dog_name} 보호자 초대 코드`,
+    body: html`<div class="stack"><p class="callout clay"><b>이 코드는 지금만 볼 수 있어요.</b> 창을 닫으면 다시 확인할 수 없고, 필요하면 새로 만들어야 합니다.</p>
+      <div class="invite-code" aria-label="초대 코드">${inv.code}</div>
+      <p class="small muted">${fmtWhen(inv.expires_at)}까지, 한 번만 사용할 수 있습니다. 보호자가 아래 주소에서 코드를 입력해 가입합니다.<br><span class="mono">${link}</span></p>
+      <div class="mf"><button type="button" class="btn secondary" id="copy">코드 복사</button><button type="button" class="btn" data-close>확인</button></div></div>`.toString(),
+    onMount(el, close) {
+      el.querySelector('#copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(inv.code); toast('초대 코드를 복사했습니다.'); }
+        catch { toast('복사하지 못했습니다. 코드를 직접 선택해 복사해 주세요.', 'error'); }
+      });
+    },
+    onClose: () => ctx.rerender(),
   });
 }

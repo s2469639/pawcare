@@ -53,10 +53,10 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible(); shot("10-dashboard-after", True)
     page.goto(f"{BASE}/#/tasks"); expect(page.locator(".task-row").first).to_be_visible(); shot("11-task-handoff-list", True)
 
-    page.goto(f"{BASE}/#/dogs/3")
-    page.set_viewport_size({"width": 1280, "height": 820})
-    page.goto(f"{BASE}/#/parent"); page.get_by_role("button", name="모카").click()
+    page.locator("#who").select_option(label="보호자 · 이수아 (모카)")                      # 데모 계정 전환 → 보호자 화면
     expect(page.locator(".phone")).to_contain_text("신나게"); shot("12-parent-preview")
+    page.locator("#who").select_option(label="오후 담당자 · 서민재")
+    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
     # 일과
     page.goto(f"{BASE}/#/dashboard"); expect(page.locator(".routine.compact .rblock")).to_have_count(6); shot("14-dashboard-routine")
@@ -78,6 +78,20 @@ with sync_playwright() as p:
     shot("17-photo-cropper")
     page.locator("#ok").click(); expect(page.locator("#pp-prev img")).to_have_count(1); shot("18-register-dog")
     m.get_by_role("button", name="등록", exact=True).click(); expect(page.get_by_role("heading", name="초코")).to_be_visible(); shot("19-new-dog-profile")
+
+    # 로그인 · 보호자 초대 · 가입
+    page.goto(f"{BASE}/#/dogs/4"); page.get_by_role("button", name="초대 코드 만들기").click()
+    expect(page.locator(".invite-code")).to_be_visible(); code = page.locator(".invite-code").inner_text().strip(); shot("20-invite-code")
+    page.locator(".modal").get_by_role("button", name="확인").click()
+    page.get_by_role("button", name="처음 화면으로").click()
+    expect(page.get_by_role("button", name="선생님으로 시작하기")).to_be_visible()            # 로그아웃이 끝난 뒤 이동
+    page.goto(f"{BASE}/#/login"); expect(page.get_by_role("heading", name="로그인")).to_be_visible(); shot("21-login")
+    page.goto(f"{BASE}/#/register")
+    page.get_by_label("초대 코드 *").fill(code); page.get_by_label("이름 *").fill("최하진"); page.get_by_label("이메일 *").fill("hajin@example.com")
+    page.get_by_label("비밀번호 *", exact=True).fill("새비밀번호-2026"); page.get_by_label("비밀번호 확인 *").fill("새비밀번호-2026"); shot("22-register")
+    page.goto(f"{BASE}/#/login")
+    page.get_by_label("이메일").fill("minjae.seo@pawcare.demo"); page.get_by_label("비밀번호").fill("pawcare-demo")
+    page.get_by_role("button", name="로그인", exact=True).click(); expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
     page.set_viewport_size({"width": 390, "height": 800})
     page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible(); shot("13-mobile-dashboard")

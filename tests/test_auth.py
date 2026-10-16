@@ -82,14 +82,15 @@ def test_logout_invalidates_server_side_session(client):
     token = client.cookies.get("pawcare_session")
     assert client.get("/api/auth/me", headers=bearer(token)).status_code == 200
     assert client.post("/api/auth/logout", headers={"X-PawCare": "1"}).status_code == 200
-    assert client.get("/api/auth/me", headers=bearer(token)).status_code == 401    # 토큰을 알아도 서버에서 이미 폐기됨
-    assert client.get("/api/auth/me").status_code == 401
+    assert client.get("/api/auth/me", headers=bearer(token)).json() == {"account": None}    # 토큰을 알아도 서버에서 이미 폐기됨
+    assert client.get("/api/auth/me").json() == {"account": None}
+    assert client.get("/api/dashboard", headers=bearer(token)).status_code == 401
 
 
 def test_expired_session_rejected(client):
     sql("UPDATE sessions SET expires_at='2000-01-01T00:00:00'")
     assert client.get("/api/dashboard", headers=MORNING).status_code == 401
-    assert client.get("/api/auth/me").status_code == 401
+    assert client.get("/api/auth/me", headers=MORNING).json() == {"account": None}
 
 
 def test_secrets_are_not_stored_in_plain_text(client):

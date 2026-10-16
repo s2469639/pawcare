@@ -110,3 +110,11 @@ export function openModal({ title, body, onMount, onClose }) {
   (ov.querySelector('input, textarea, select') || ov.querySelector('button')).focus();
   return close;
 }
+
+/** 데모 모드의 계정 전환 드롭다운(직원·보호자 공용). 옵션 라벨은 '역할 · 이름'. */
+export function demoSelect(accounts, meId) {
+  const groups = {};
+  accounts.forEach((a) => (groups[a.org_name] ||= []).push(a));
+  return html`<select id="who" class="input" style="width:auto" aria-label="데모 계정 전환">${Object.entries(groups).map(([org, list]) =>
+    html`<optgroup label="${org}">${list.map((a) => html`<option value="${a.id}" ${a.id === meId ? 'selected' : ''}>${a.role === 'staff' ? `${a.staff_role} · ${a.name}` : `보호자 · ${a.name} (${a.dogs || '-'})`}</option>`)}</optgroup>`)}</select>`;
+}

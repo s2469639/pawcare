@@ -1,15 +1,12 @@
 /* 모든 데이터 변경은 백엔드 API를 통해 저장한다. */
-import { session } from './session.js';
-
 export class ApiError extends Error {
   constructor(message, status = 0, errors = []) { super(message); this.status = status; this.errors = errors; }
   fieldError(name) { return this.errors.find((e) => e.field === name)?.message; }
 }
 
 async function request(method, path, body, raw) {
-  const headers = raw ? { 'Content-Type': raw.type } : { 'Content-Type': 'application/json' };
-  const sid = session.get().staffId;
-  if (sid) headers['X-Staff-Id'] = String(sid);
+  // X-PawCare: 쿠키로 인증된 쓰기 요청의 CSRF 방어용(서버가 확인). 세션 쿠키는 브라우저가 자동으로 보낸다.
+  const headers = { 'X-PawCare': '1', 'Content-Type': raw ? raw.type : 'application/json' };
   let res;
   try {
     res = await fetch(path, { method, headers, body: raw ? raw : body === undefined ? undefined : JSON.stringify(body) });
@@ -25,7 +22,16 @@ async function request(method, path, body, raw) {
 const q = (o) => { const p = new URLSearchParams(Object.entries(o).filter(([, v]) => v !== '' && v != null)); return p.size ? `?${p}` : ''; };
 
 export const api = {
-  demoStaff: () => request('GET', '/api/demo/staff'),
+  config: () => request('GET', '/api/auth/config'),
+  me: () => request('GET', '/api/auth/me'),
+  login: (email, password) => request('POST', '/api/auth/login', { email, password }),
+  logout: () => request('POST', '/api/auth/logout'),
+  register: (b) => request('POST', '/api/auth/register', b),
+  demoAccounts: () => request('GET', '/api/auth/demo-accounts'),
+  demoLogin: (account_id) => request('POST', '/api/auth/demo-login', { account_id }),
+  createInvite: (dog_id) => request('POST', '/api/invites', { dog_id }),
+  revokeInvite: (id) => request('DELETE', `/api/invites/${id}`),
+  guardians: (dog_id) => request('GET', `/api/dogs/${dog_id}/guardians`),
   reset: () => request('POST', '/api/demo/reset'),
   staff: () => request('GET', '/api/staff'),
   dashboard: () => request('GET', '/api/dashboard'),

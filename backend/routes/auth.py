@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from .. import auth
 from ..database import get_db, now_iso
-from ..deps import COOKIE, FieldError, current_account, session_token
+from ..deps import COOKIE, FieldError, session_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -88,8 +88,11 @@ def logout(request: Request, response: Response, db: sqlite3.Connection = Depend
 
 
 @router.get("/me")
-def me(account: dict = Depends(current_account), db: sqlite3.Connection = Depends(get_db)):
-    return {"account": account_view(db, account)}
+def me(request: Request, db: sqlite3.Connection = Depends(get_db)):
+    """로그인 상태 확인. 로그인하지 않았거나 세션이 만료되었으면 오류가 아니라 account=null로 답한다."""
+    token, _ = session_token(request)
+    acc = auth.account_for_token(db, token) if token else None
+    return {"account": account_view(db, dict(acc)) if acc else None}
 
 
 @router.post("/register", status_code=201)

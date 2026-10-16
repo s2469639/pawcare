@@ -88,6 +88,17 @@
 
 사진은 **어떤 비율이든 올릴 수 있고**, 브라우저에서 원형 가이드 안의 위치·확대를 맞춰 **512×512 정사각형**으로 잘라 보냅니다(드래그, 휠·슬라이더 확대, 키보드 이동 지원). 서버는 파일 형식(앞부분 시그니처까지)과 용량(1MB)을 검사하고, 올린 사진은 Git에 올라가지 않는 `uploads/`에 저장합니다.
 
+### 9. 로그인과 보호자 초대 (M1)
+| 로그인 | 직원이 만든 초대 코드(한 번만 표시) | 코드로 보호자 가입 |
+|---|---|---|
+| ![로그인](docs/screenshots/21-login.png) | ![초대 코드](docs/screenshots/20-invite-code.png) | ![보호자 가입](docs/screenshots/22-register.png) |
+
+- 직원·보호자 모두 **이메일 + 비밀번호**로 로그인합니다. 비밀번호는 `scrypt` 해시로만 저장하고, 세션은 `HttpOnly` 쿠키입니다(서버에는 토큰의 해시만 저장).
+- 같은 이메일로 5번 실패하면 10분간 로그인이 제한됩니다(IP별 제한도 있음). 이메일이 없는 경우와 비밀번호가 틀린 경우는 같은 메시지로 응답합니다.
+- **보호자는 직원이 만든 초대 코드로만 가입**할 수 있고, 가입하면 그 반려견에 연결됩니다. 코드는 1회용·7일 만료이며, 만든 직후 한 번만 보여주고 DB에는 해시만 저장합니다. 코드 추측 시도도 횟수를 제한합니다.
+- 보호자는 자기 아이의 승인된 기록만 볼 수 있고, 다른 집 아이와 직원 화면·API는 막혀 있습니다.
+- 쿠키로 인증한 쓰기 요청에는 CSRF 방어용 헤더(`X-PawCare`)가 필요합니다.
+
 ## 실행 방법
 
 ```bash
@@ -95,9 +106,33 @@ pip install -r requirements.txt
 uvicorn backend.main:app --reload      # http://localhost:8000
 ```
 
-- 첫 실행 시 `pawcare.db`(SQLite)가 만들어지고 샘플 데이터가 자동 등록됩니다.
-- 화면 왼쪽 아래 **데모 데이터 초기화**로 처음 상태로 되돌릴 수 있습니다.
-- 상단의 **시연 담당자** 드롭다운으로 오전/오후 담당자·관리자를 전환합니다. (로그인 대체)
+- 첫 실행 시 `pawcare.db`(SQLite)가 만들어지고 샘플 데이터와 **데모 계정**이 자동 등록됩니다.
+
+### 시연 모드와 로그인 모드
+
+`.env.example`을 `.env`로 복사하세요(`cp .env.example .env`, Windows: `copy .env.example .env`). **`DEMO_MODE`** 로 동작이 달라집니다.
+
+| | `DEMO_MODE=1` (포트폴리오 시연용, 예시 파일 기본값) | 비우거나 `0` (실제 로그인 모드) |
+|---|---|---|
+| 첫 화면 | "선생님/보호자로 시작하기"로 **로그인 없이** 가상 계정 체험 | 이메일·비밀번호 로그인 필요 |
+| 계정 전환 | 상단 **시연 계정** 드롭다운으로 직원·보호자 전환 | 없음 |
+| 데이터 초기화 | 왼쪽 아래 **데모 데이터 초기화** | 없음(API도 404) |
+| 용도 | 로컬에서 시연·캡처 | 인터넷에 공개하거나 로그인 흐름을 확인할 때 |
+
+> 기존에 만든 `.env`에 `DEMO_MODE=1` 줄이 없으면 로그인 화면이 먼저 나옵니다. 시연하려면 한 줄을 추가하고 서버를 다시 켜세요.
+
+**데모 계정**(모두 가상, 비밀번호 `pawcare-demo`)
+
+| 역할 | 이메일 |
+|---|---|
+| 오전 담당자 · 한지우 | `jiwoo.han@pawcare.demo` |
+| 오후 담당자 · 서민재 | `minjae.seo@pawcare.demo` |
+| 관리자 · 정하은 | `haeun.jung@pawcare.demo` |
+| 다른 유치원 관리자 · 오하준 | `hajun.oh@pawcare.demo` |
+| 보호자 · 김서연(보리) · 박도윤(두부) · 이수아(모카) | `seoyeon.kim@` · `doyun.park@` · `sua.lee@pawcare.demo` |
+
+밤이·콩이의 보호자는 일부러 계정을 만들지 않았습니다. 반려견 프로필의 **초대 코드 만들기**로 보호자 가입을 시연할 수 있습니다.
+공개 비밀번호를 쓰는 데모 계정이 있는 채로 인터넷에 공개하면 안 됩니다(로그인 모드로 시작하면 서버가 경고를 남깁니다).
 
 ### AI 연동 (선택)
 
@@ -130,18 +165,19 @@ uvicorn backend.main:app --reload      # http://localhost:8000
 
 ```
 backend/    FastAPI + SQLite
-            database.py  schemas.py  deps.py  seed.py
-            routes/      dogs · records · tasks · ai · routine · misc
+            database.py  schemas.py  deps.py  auth.py  seed.py
+            routes/      auth · invites · dogs · records · tasks · ai · routine · misc
             services/    ai_service.py (데모 분석 + Gemini + 출력 검증)
             list_models.py  내 키로 쓸 수 있는 Gemini 모델 목록 출력
 frontend/   Vanilla JS(ES modules) SPA, 직접 작성한 CSS (Ivory · Sage · Forest Ink · Clay)
             assets/dogs/  샘플 반려견 프로필 사진(더미). 사진이 없거나 불러오지 못하면 이니셜 아바타로 대체
             js/cropper.js  사진 선택·원형 가이드 크롭(라이브러리 없음)
-tests/      pytest(API) · e2e_scenario.py(브라우저) · capture_screenshots.py
+            js/auth.js     로그인·보호자 가입 화면
+tests/      pytest(API) · e2e_scenario.py · e2e_login_mode.py(브라우저) · capture_screenshots.py
 docs/       시연 화면 캡처
 ```
 
-**데이터 모델:** `organizations`, `staff`, `dogs`(사진 경로 포함), `routine_blocks`(일과 구간), `care_records`(보호자 공개 상태·구간 포함), `tasks`(`source_record_id`로 원본 기록 연결), `task_action_logs`. 기존 DB는 시작할 때 자동으로 마이그레이션됩니다.
+**데이터 모델:** `organizations`, `staff`, `accounts`·`sessions`·`guardian_dogs`·`invites`·`login_attempts`(인증), `dogs`(사진 경로 포함), `routine_blocks`(일과 구간), `care_records`(보호자 공개 상태·구간 포함), `tasks`(`source_record_id`로 원본 기록 연결), `task_action_logs`. 기존 DB는 시작할 때 자동으로 마이그레이션됩니다.
 모든 데이터는 `org_id`(유치원)로 분리되어, 다른 유치원 직원은 접근할 수 없습니다.
 
 **주요 API**
@@ -157,30 +193,41 @@ docs/       시연 화면 캡처
 | `GET/POST /api/tasks` · `GET/PATCH /api/tasks/{id}` | 업무 조회·생성·담당자/내용 변경 |
 | `POST /api/tasks/{id}/actions` | `acknowledge` · `start` · `complete`(결과 필수) · `comment` |
 | `POST /api/ai/suggest-tasks` | 제안 반환(저장하지 않음) |
+| `POST /api/auth/login` · `logout` · `register` · `GET /api/auth/me` | 로그인·로그아웃·보호자 가입(초대 코드)·로그인 상태 |
+| `POST /api/invites` · `GET /api/dogs/{id}/guardians` · `DELETE /api/invites/{id}` | 보호자 초대 코드 발급·현황·취소(직원 전용) |
+| `GET /api/parent/dogs` · `/api/parent/dogs/{id}/preview` | 보호자 본인 아이의 승인된 알림장(보호자 전용) |
+| `GET /api/auth/demo-accounts` · `POST /api/auth/demo-login` · `POST /api/demo/reset` | **데모 모드에서만** 동작 |
 
-현재 직원은 `X-Staff-Id` 헤더로 식별합니다(데모용). 오류는 한국어 메시지와 필드별 `errors`로 반환합니다.
+인증은 세션 쿠키(브라우저) 또는 `Authorization: Bearer`(API 클라이언트)입니다. 오류는 한국어 메시지와 필드별 `errors`로 반환합니다.
 
 ## 테스트
 
 ```bash
-python -m pytest -q                     # API·규칙·업로드 보안·일과·마이그레이션 26개
+python -m pytest -q                     # API·규칙·업로드 보안·일과·인증·마이그레이션 44개
 pip install playwright                  # e2e 및 캡처에 필요
-python tests/e2e_scenario.py            # 서버 실행 후. 실제 브라우저로 전체 시나리오 검증
+DEMO_MODE=1 python -m uvicorn backend.main:app &   # (Windows는 .env에 DEMO_MODE=1)
+python tests/e2e_scenario.py            # 시연 모드 서버에서 전체 시나리오 검증
+python tests/e2e_login_mode.py          # DEMO_MODE 없이 켠 서버에서 로그인 모드 검증
 python tests/capture_screenshots.py     # docs/screenshots 재생성
 ```
 
-e2e(19개 항목)는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수정/승인, 담당자 전환, 확인·조치 분리, 새로고침 후 데이터 유지, 입력 오류, 없는 ID 처리, 보호자 미리보기, 반려견 등록과 사진 크롭(드래그한 위치가 결과물 픽셀에 반영되는지까지), 일과 구간, 유치원 간 격리, 390px 가로 스크롤 없음, 콘솔 오류 없음을 확인합니다.
+e2e(21개 항목)는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수정/승인, 담당자 전환, 확인·조치 분리, 새로고침 후 데이터 유지, 입력 오류, 없는 ID 처리, 보호자 미리보기, 반려견 등록과 사진 크롭(드래그한 위치가 결과물 픽셀에 반영되는지까지), 일과 구간, 로그인·로그아웃·시도 제한·세션 유지, 초대 코드 발급→보호자 가입→접근 범위, 유치원 간 격리, 390px 가로 스크롤 없음, 콘솔 오류 없음을 확인합니다.
 
 ## 다음 계획
 
-보호자에게 사진을 전달하는 알림장(로그인 포함)은 [docs/PLAN-parent-sharing.md](docs/PLAN-parent-sharing.md)에 단계별 계획으로 정리했습니다. **아직 구현되지 않았습니다.**
+보호자에게 사진을 전달하는 알림장은 [docs/PLAN-parent-sharing.md](docs/PLAN-parent-sharing.md)의 단계별 계획을 따릅니다.
+
+| 단계 | 상태 |
+|---|---|
+| M1 인증(계정·세션·초대 코드·데모 모드 분리) | ✅ 완료 |
+| M2 기록에 사진 첨부 · M3 공개 승인 · M4 보호자 알림장(사진) · M5 일과 연결 | 아직 구현되지 않음 |
 
 ## 한계
 
-- **로그인·회원가입 없음.** `org_id` 분리와 `X-Staff-Id` 의존성이 실제 인증으로 바뀔 자리입니다.
+- **인증은 최소 구현입니다.** 비밀번호 재설정·이메일 인증·비밀번호 변경·계정 삭제가 없고, 직원 계정을 만드는 화면도 없습니다(샘플 직원 계정만 있음). 로그인 시도 제한은 이 서버 한 대 기준이며, 사용자 단위 잠금이므로 남이 일부러 실패를 반복시켜 잠글 수 있습니다.
 - **Gemini 실제 호출은 검증하지 못했습니다.** 개발 환경에 키가 없어, 출력 검증 로직과 실패 시 데모 분석으로의 대체 동작만 테스트했습니다.
 - 푸시/카카오 알림, 예약·결제, 음성, CCTV, 의료 연동, 실시간 다중 사용자 동기화는 범위 밖입니다. 상단 알림 아이콘은 내게 배정된 확인 대기 업무 수를 보여줄 뿐 실제 푸시가 아닙니다.
 - 보호자 화면은 승인된 기록 미리보기까지입니다. 시각은 한국 표준시(KST) 기준입니다.
-- 샘플 반려견 사진은 시연용 더미 이미지입니다. 직접 올린 사진은 서버 디스크(`uploads/`)에 저장되며, 파일명이 무작위일 뿐 **로그인 없이 주소를 알면 열 수 있습니다.** 실제 서비스에서는 인증과 객체 저장소가 필요합니다. 영상 업로드는 아직 없습니다.
+- 샘플 반려견 사진은 시연용 더미 이미지입니다. 직접 올린 사진은 서버 디스크(`uploads/`)에 저장되며, 파일명이 무작위일 뿐 **로그인 없이 주소를 알면 열 수 있습니다**(보호자 사진 전송을 만들 때 인증을 거치는 경로로 바꿀 예정). 실제 서비스에서는 인증과 객체 저장소가 필요합니다. 영상 업로드는 아직 없습니다.
 - 일과 구간은 예시 템플릿 하나이며 편집·요일별 설정은 없습니다. 반려견 삭제 기능도 아직 없습니다.
 - 샘플 데이터의 "알레르기·민감성" 등은 시연용 가상 정보이며 실제 건강 정보가 아닙니다.

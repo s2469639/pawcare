@@ -1,5 +1,5 @@
 """핵심 시연 시나리오 E2E (실제 브라우저 조작). 사용법:
-   서버 실행 후  python tests/e2e_scenario.py [BASE_URL]
+   DEMO_MODE=1 로 서버를 실행한 뒤  python tests/e2e_scenario.py [BASE_URL]
    (기본 http://localhost:8000, 실행 전 POST /api/demo/reset 으로 샘플 데이터를 초기화합니다.)
 """
 import glob
@@ -82,7 +82,7 @@ with sync_playwright() as p:
     expect(page.get_by_text("보리의 기록을 저장했습니다")).to_be_visible()
     shot("05-record-saved")
     step("빠른 기록 저장 (자동으로 업무가 생기지 않음)")
-    tasks_before = int(urllib.request.urlopen(urllib.request.Request(f"{BASE}/api/dashboard", headers={"X-Staff-Id": "1"})).read().count(b'"title"'))
+    tasks_before = page.request.get(f"{BASE}/api/dashboard").text().count('"title"')
     assert tasks_before == 4, tasks_before
 
     # 4. AI 제안
@@ -93,8 +93,8 @@ with sync_playwright() as p:
     shot("06-ai")
     page.get_by_role("button", name="제안 무시").click()
     expect(page.get_by_text("업무가 생성되지 않았습니다")).to_be_visible()
-    d = urllib.request.urlopen(urllib.request.Request(f"{BASE}/api/dashboard", headers={"X-Staff-Id": "1"})).read()
-    assert d.count(b'"title"') == 4, "무시했는데 업무가 생성됨"
+    d = page.request.get(f"{BASE}/api/dashboard").text()
+    assert d.count('"title"') == 4, "무시했는데 업무가 생성됨"
     step("AI 제안 표시(데모 분석 라벨), 제안 무시 시 업무 미생성")
     page.get_by_role("button", name="되돌리기").click()
     page.get_by_role("button", name="수정하기").click()
@@ -141,7 +141,7 @@ with sync_playwright() as p:
     row = page.locator(".task-row", has_text="오후 배변 상태 확인").filter(has_text="조치 완료").first
     expect(row).to_contain_text("조치 완료")
     expect(row).to_contain_text("확인 완료")
-    expect(page.locator(".timeline")).to_contain_text("묽은 변")
+    expect(page.locator(".timeline").first).to_contain_text("묽은 변")
     expect(page.locator(".link-task").first).to_be_visible()
     shot("10-dog-after")
     step("대시보드·업무·반려견 프로필의 상태 일치")
@@ -157,7 +157,7 @@ with sync_playwright() as p:
     expect(page.locator(".statebox > div").first).to_contain_text("확인 완료")
     page.goto(f"{BASE}/#/dogs/1")
     page.reload()
-    expect(page.locator(".timeline")).to_contain_text("묽은 변")
+    expect(page.locator(".timeline").first).to_contain_text("묽은 변")
     step("새로고침 후 데이터 유지")
 
     # 9. 오류 처리
@@ -181,12 +181,18 @@ with sync_playwright() as p:
     page.get_by_label("보호자에게 보여줄 문구 *").fill("오늘 점심은 조금 적게 먹었지만 컨디션을 살피고 있어요.")
     page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
     expect(page.get_by_text("보호자 공개 승인됨")).to_be_visible()
-    page.goto(f"{BASE}/#/parent")
+    page.locator("#who").select_option(label="보호자 · 김서연 (보리)")                  # 데모 계정 전환 → 보호자 화면
+    expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
     expect(page.get_by_text("공개 승인된 기록이 없습니다")).to_have_count(0)
     expect(page.locator(".phone")).to_contain_text("컨디션을 살피고")
     expect(page.locator(".phone")).not_to_contain_text("오후 담당자")
+    expect(page.locator(".chips [data-d]")).to_have_count(1)                            # 자기 아이(보리)만
     shot("12-parent")
-    step("보호자 미리보기는 승인된 문구만 표시")
+    page.goto(f"{BASE}/#/dogs")                                                          # 보호자는 직원 화면에 들어갈 수 없음
+    expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
+    page.locator("#who").select_option(label="오후 담당자 · 서민재")                       # 다시 직원으로
+    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
+    step("보호자 화면: 자기 아이의 승인된 문구만 표시, 직원 화면 접근 차단")
 
     # 10-b. 반려견 등록 + 사진 자르기(크롭)
     from PIL import Image
@@ -274,8 +280,67 @@ with sync_playwright() as p:
     page.locator("#f").get_by_text("활발함", exact=True).click(); page.get_by_role("button", name="기록 저장").click()
     expect(page.locator("#done")).to_contain_text("두부의 기록을 저장했습니다"); expect(page.locator("#done")).to_contain_text("오후 산책·놀이")
     page.goto(f"{BASE}/#/dogs/2")
-    expect(page.locator(".timeline")).to_contain_text("오후 산책·놀이")
+    expect(page.locator(".timeline").first).to_contain_text("오후 산책·놀이")
     step("일과: 대시보드 구간 표시, 구간별 기록 현황·기록 없는 아이, 인계 시점 요약, 구간에서 바로 기록 작성")
+
+    # 10-d. 로그인·세션·초대 코드·보호자 가입
+    page.get_by_role("button", name="처음 화면으로").click()                              # 로그아웃
+    expect(page.get_by_role("button", name="선생님으로 시작하기")).to_be_visible()
+    page.goto(f"{BASE}/#/dashboard")                                                     # 로그인 없이 직원 화면 → 로그인으로
+    expect(page.get_by_role("heading", name="로그인")).to_be_visible(); expect(page.get_by_text("로그인이 필요합니다.")).to_be_visible()
+    shot("20-login")
+    page.get_by_label("이메일").fill("jiwoo.han@pawcare.demo"); page.get_by_label("비밀번호").fill("틀린비밀번호")
+    page.get_by_role("button", name="로그인", exact=True).click()
+    expect(page.locator("#form-err")).to_contain_text("이메일 또는 비밀번호가 올바르지 않습니다.")
+    page.get_by_label("이메일").fill("nobody-lock@pawcare.demo")                         # 같은 이메일로 반복 실패 → 시도 제한
+    for _ in range(6):                                                                   # 5번 실패한 뒤 6번째 시도부터 차단
+        page.get_by_label("비밀번호").fill("틀린비밀번호")
+        with page.expect_response("**/api/auth/login"):                                  # 시간이 아니라 응답을 기다린다
+            page.get_by_role("button", name="로그인", exact=True).click()
+    expect(page.locator("#form-err")).to_contain_text("로그인 시도가 너무 많습니다")
+    shot("21-login-locked")
+    errors[:] = [e for e in errors if "401" not in e and "429" not in e]               # 일부러 일으킨 인증 실패 응답
+    page.get_by_label("이메일").fill("jiwoo.han@pawcare.demo"); page.get_by_label("비밀번호").fill("pawcare-demo")   # 다른 계정은 영향 없음
+    page.get_by_role("button", name="로그인", exact=True).click()
+    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
+    page.reload(); expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()   # 새로고침해도 로그인 유지(쿠키 세션)
+    assert "pawcare_session" not in page.evaluate("document.cookie"), "세션 쿠키가 JS에서 읽힘(HttpOnly 아님)"
+    step("로그인 필요 경로 보호, 잘못된 비밀번호·반복 실패 제한, 새로고침 후 세션 유지, 쿠키는 JS에서 읽을 수 없음")
+
+    page.goto(f"{BASE}/#/dogs/4")                                                        # 밤이: 아직 보호자 계정이 없음
+    expect(page.get_by_role("heading", name="보호자 계정")).to_be_visible()
+    expect(page.get_by_text("아직 가입한 보호자가 없습니다")).to_be_visible()
+    page.get_by_role("button", name="초대 코드 만들기").click()
+    code = page.locator(".invite-code").inner_text().strip()
+    assert re.fullmatch(r"[A-Z2-9]{4}-[A-Z2-9]{4}", code), code
+    shot("22-invite-code")
+    page.locator(".modal").get_by_role("button", name="확인").click()
+    expect(page.get_by_text("사용 대기")).to_be_visible()
+    expect(page.locator("body")).not_to_contain_text(code)                              # 코드 원문은 다시 볼 수 없음
+    page.get_by_role("button", name="처음 화면으로").click()
+    page.goto(f"{BASE}/#/register")
+    page.get_by_label("초대 코드 *").fill(code.lower()); page.get_by_label("이름 *").fill("최하진"); page.get_by_label("이메일 *").fill("hajin@example.com")
+    page.get_by_label("비밀번호 *", exact=True).fill("새비밀번호-2026"); page.get_by_label("비밀번호 확인 *").fill("다른비밀번호")
+    page.get_by_role("button", name="가입하고 시작하기").click()
+    expect(page.get_by_text("비밀번호가 서로 다릅니다.")).to_be_visible()
+    shot("23-register")
+    page.get_by_label("비밀번호 확인 *").fill("새비밀번호-2026"); page.get_by_role("button", name="가입하고 시작하기").click()
+    expect(page.get_by_role("heading", name="최하진님의 알림장")).to_be_visible()
+    expect(page.locator(".chips [data-d]")).to_have_text(["밤이"])                      # 초대받은 아이 한 마리만
+    page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("heading", name="최하진님의 알림장")).to_be_visible()   # 직원 화면 차단
+    page.get_by_role("button", name="처음 화면으로").click()
+    page.goto(f"{BASE}/#/register")                                                      # 코드 재사용 불가
+    page.get_by_label("초대 코드 *").fill(code); page.get_by_label("이름 *").fill("다른사람"); page.get_by_label("이메일 *").fill("other@example.com")
+    page.get_by_label("비밀번호 *", exact=True).fill("새비밀번호-2026"); page.get_by_label("비밀번호 확인 *").fill("새비밀번호-2026")
+    page.get_by_role("button", name="가입하고 시작하기").click()
+    expect(page.get_by_text("이미 사용·만료되었습니다")).to_be_visible()
+    errors[:] = [e for e in errors if "400" not in e]
+    step("초대 코드: 직원이 발급(원문은 한 번만 표시) → 보호자 가입 → 해당 아이만 접근, 재사용 불가")
+
+    page.goto(f"{BASE}/#/login")                                                         # 이후 단계는 직원으로 계속
+    page.get_by_label("이메일").fill("jiwoo.han@pawcare.demo"); page.get_by_label("비밀번호").fill("pawcare-demo")
+    page.get_by_role("button", name="로그인", exact=True).click()
+    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
