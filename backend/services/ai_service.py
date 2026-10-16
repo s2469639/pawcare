@@ -300,6 +300,14 @@ def _norm(s: str) -> str:
     return re.sub(r"[\s\"'“”‘’.,!?…·~\-]+", "", s)
 
 
+def _role_in_source(role, source: str) -> bool:
+    if not isinstance(role, str):
+        return False
+    if "관리자" in role:
+        return "관리자" in source
+    return any(k in role and re.search(k + r"\s*담당", source) for k in ("오전", "오후"))
+
+
 def sanitize_model_output(data: dict, record: dict, staff: list[dict]) -> dict:
     """모델 출력 검증: 원문에 없는 근거·금지 표현이 있으면 해당 제안을 버린다. 버린 개수는 rejected로 알려준다."""
     source = (record.get("structured_value") or "") + "\n" + record["content"]
@@ -313,7 +321,8 @@ def sanitize_model_output(data: dict, record: dict, staff: list[dict]) -> dict:
         if not title or not ev or FORBIDDEN.search(title + desc):
             rejected += 1
             continue
-        asg = by_role.get(s.get("assignee_role"))
+        # 담당자는 기록에 근거가 있을 때만 지정한다: 모델이 역할을 골라도, 원문에 그 역할이 언급되지 않았으면 무시한다
+        asg = by_role.get(s.get("assignee_role")) if _role_in_source(s.get("assignee_role"), source) else None
         out.append({"title": title, "description": desc, "needs_check": True,
                     "assignee_id": asg["id"] if asg else None,
                     "assignee_note": None if asg else "기록에 담당자 정보가 없어 지정이 필요합니다.",

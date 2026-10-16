@@ -245,3 +245,22 @@ def test_connection_test_shows_resolved_model_for_auto(client, google, monkeypat
     google["models"].update({"gemini-3.5-flash": "ok"})
     r = client.post("/api/ai/test", headers=MORNING).json()
     assert r["ok"] and r["model"] == "gemini-3.5-flash" and "gemini-3.5-flash" in r["message"]
+
+
+def test_assignee_is_only_set_when_the_record_mentions_it(client, gem):
+    """모델이 담당자를 정해 와도, 기록 원문에 그 역할이 언급되지 않았으면 지정하지 않는다(기록 #1에는 담당자 언급이 없음)."""
+    pick = dict(GOOD, suggestions=[{"title": "식사량 추가 관찰", "description": "다음 식사 시 섭취량을 관찰하고 기록한다.",
+                                    "assignee_role": "오후 담당자", "evidence": ["점심을 평소보다 적게 먹었습니다."]}])
+    gem(ok(pick))
+    r = suggest(client, record=1)
+    assert r["mode"] == "gemini" and [s["title"] for s in r["suggestions"]] == ["식사량 추가 관찰"]
+    assert r["suggestions"][0]["assignee_id"] is None and "담당자 정보가 없어" in r["suggestions"][0]["assignee_note"]
+    gem(ok(GOOD))                                                                           # 기록 #2는 '오후 담당자는 …'라고 적혀 있으므로 지정된다
+    assert suggest(client, record=2)["suggestions"][0]["assignee_id"] == 2
+
+
+def test_role_in_source_rules():
+    f = ai_service._role_in_source
+    assert f("오후 담당자", "오후 담당자는 확인해 주세요") and f("오전 담당자", "오전 담당 선생님께 전달") and f("관리자", "관리자에게 보고")
+    assert not f("오후 담당자", "오후 활동량이 적었습니다")        # 시간대 표현일 뿐 담당자를 가리키지 않음
+    assert not f("오후 담당자", "점심을 적게 먹었습니다") and not f(None, "오후 담당자") and not f("오전 담당자", "오후 담당자는")

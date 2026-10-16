@@ -162,7 +162,7 @@ def test_ai_does_not_invent_or_diagnose(client):
         {"title": "배변 확인", "description": "관찰 후 기록", "evidence": ["구토를 했습니다."]},
         {"title": "배변 확인", "description": "관찰 후 기록", "assignee_role": "오후 담당자", "evidence": ["묽은 변이 관찰되었습니다."]},
     ], "facts": ["묽은 변이 관찰되었습니다.", "열이 있었습니다."]}, record, staff)
-    assert len(out["suggestions"]) == 1 and out["suggestions"][0]["assignee_id"] == 2
+    assert len(out["suggestions"]) == 1 and out["suggestions"][0]["assignee_id"] is None      # 기록 원문에 담당자 언급이 없으므로 모델이 정해도 지정하지 않는다
     assert out["facts"] == ["묽은 변이 관찰되었습니다."]
 
 
