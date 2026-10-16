@@ -80,7 +80,28 @@ uvicorn backend.main:app --reload      # http://localhost:8000
 
 ### AI 연동 (선택)
 
-`.env.example`을 `.env`로 복사하고 `GEMINI_API_KEY`, `GEMINI_MODEL`을 채우면 서버에서 Gemini를 호출합니다. 비워 두면 규칙 기반 **데모 분석**으로 동작합니다. 키는 서버 환경변수로만 쓰이며 프런트엔드로 전달되지 않습니다. 호출이 실패하면 데모 분석으로 대체되고 화면에 그 사실이 표시됩니다.
+비워 두면 규칙 기반 **데모 분석**으로 동작합니다. Gemini를 쓰려면 본인 컴퓨터에서 아래 순서로 설정합니다. **`.env`는 Git에 올라가지 않으며(`.gitignore`), 키는 서버에서만 쓰이고 프런트엔드로 전달되지 않습니다.**
+
+1. `.env` 만들기 (프로젝트 맨 위 폴더에서)
+   ```bash
+   cp .env.example .env          # Windows 명령 프롬프트: copy .env.example .env
+   ```
+2. `.env`에 키를 입력합니다. 따옴표·공백 없이 입력합니다.
+   ```
+   GEMINI_API_KEY=발급받은키
+   GEMINI_MODEL=
+   ```
+3. 내 키로 쓸 수 있는 모델 이름을 확인합니다. (모델 이름은 자주 바뀌므로 목록에서 고르세요)
+   ```bash
+   python -m backend.list_models
+   ```
+   출력된 이름 중 하나(★ 표시된 flash 계열 권장)를 `GEMINI_MODEL=`에 그대로 붙여 넣습니다.
+4. 서버를 (다시) 실행합니다. `.env`를 고쳤다면 반드시 껐다 켜야 합니다.
+   ```bash
+   python -m uvicorn backend.main:app --reload
+   ```
+5. 확인: `http://localhost:8000/api/health`가 `"ai_configured": true`이고, AI 제안 화면 라벨이 **"Gemini 분석 (모델명)"** 이면 성공입니다.
+   "데모 분석" 라벨과 함께 안내문이 보이면 호출이 실패해 데모 분석으로 대체된 것입니다(키·모델명·네트워크 확인).
 
 모델 응답은 그대로 쓰지 않고 검증합니다. 원본 기록에 없는 근거 문장이 있거나 진단·투약 표현이 있는 제안은 버립니다.
 
@@ -91,6 +112,7 @@ backend/    FastAPI + SQLite
             database.py  schemas.py  deps.py  seed.py
             routes/      dogs · records · tasks · ai · misc
             services/    ai_service.py (데모 분석 + Gemini + 출력 검증)
+            list_models.py  내 키로 쓸 수 있는 Gemini 모델 목록 출력
 frontend/   Vanilla JS(ES modules) SPA, 직접 작성한 CSS (Ivory · Sage · Forest Ink · Clay)
 tests/      pytest(API) · e2e_scenario.py(브라우저) · capture_screenshots.py
 docs/       시연 화면 캡처
