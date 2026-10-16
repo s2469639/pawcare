@@ -1,5 +1,5 @@
 from backend.services import ai_service
-from .conftest import ADMIN, AFTERNOON, MORNING, OTHER_ORG
+from .conftest import ADMIN, AFTERNOON, DEMO_PASSWORD, MORNING, OTHER_ORG, PARENT_BORI
 
 BORI = 1
 
@@ -115,7 +115,7 @@ def test_validation_and_errors(client):
     assert client.get("/api/tasks/999", headers=MORNING).status_code == 404
     assert client.post("/api/tasks", json={"dog_id": BORI, "title": "  "}, headers=MORNING).status_code == 422
     assert client.get("/api/dogs").status_code == 401
-    assert client.get("/api/dogs", headers={"X-Staff-Id": "999"}).status_code == 401
+    assert client.get("/api/dogs", headers={"Authorization": "Bearer not-a-real-token"}).status_code == 401
     assert client.post("/api/tasks", json={"dog_id": BORI, "title": "t", "source_record_id": 3}, headers=MORNING).status_code == 422  # 다른 반려견 기록
 
 
@@ -138,15 +138,15 @@ def test_dog_search_and_filter(client):
 # 보호자 공개 범위
 def test_parent_preview_only_approved(client):
     rid = new_record(client, "내부 메모: 직원끼리만 공유")["id"]
-    p = client.get("/api/parent/dogs/1/preview").json()
+    p = client.get("/api/parent/dogs/1/preview", headers=PARENT_BORI).json()
     assert p["records"] == []
     assert client.patch(f"/api/records/{rid}/parent-approval", json={"action": "approve"}, headers=MORNING).status_code == 422
     client.patch(f"/api/records/{rid}/parent-approval", json={"action": "approve", "parent_text": "오늘도 잘 지냈어요."}, headers=MORNING)
-    p = client.get("/api/parent/dogs/1/preview").json()
+    p = client.get("/api/parent/dogs/1/preview", headers=PARENT_BORI).json()
     assert [r["parent_text"] for r in p["records"]] == ["오늘도 잘 지냈어요."]
     assert "내부 메모" not in str(p) and "tasks" not in p
     client.patch(f"/api/records/{rid}/parent-approval", json={"action": "revoke"}, headers=MORNING)
-    assert client.get("/api/parent/dogs/1/preview").json()["records"] == []
+    assert client.get("/api/parent/dogs/1/preview", headers=PARENT_BORI).json()["records"] == []
 
 
 def test_ai_does_not_invent_or_diagnose(client):
@@ -174,10 +174,14 @@ def test_gemini_failure_falls_back_to_demo(client, monkeypatch):
     assert s["mode"] == "demo" and "대체" in s["fallback_note"]
 
 
-def test_reset(client):
+def test_reset(client, monkeypatch):
     client.post("/api/tasks", headers=MORNING, json={"dog_id": BORI, "title": "임시"})
+    assert client.post("/api/demo/reset").status_code == 404          # 데모 모드가 아니면 초기화 불가(인증 없는 데이터 삭제 방지)
+    monkeypatch.setenv("DEMO_MODE", "1")
     assert client.post("/api/demo/reset").status_code == 200
-    assert len(client.get("/api/tasks", headers=ADMIN).json()) == 4
+    assert client.get("/api/tasks", headers=ADMIN).status_code == 401     # 세션도 함께 초기화됨 → 다시 로그인
+    assert client.post("/api/auth/login", json={"email": "haeun.jung@pawcare.demo", "password": DEMO_PASSWORD}).status_code == 200
+    assert len(client.get("/api/tasks").json()) == 4
 
 
 def test_only_assignee_or_admin_can_act(client):
@@ -193,7 +197,7 @@ def test_dog_photos_in_api(client):
     assert dogs["보리"]["photo"] == "assets/dogs/bori.webp"
     t = client.get("/api/tasks/1", headers=MORNING).json()
     assert t["dog_photo"] == "assets/dogs/bori.webp"
-    assert client.get("/api/parent/dogs").json()[0]["photo"]
+    assert client.get("/api/parent/dogs", headers=PARENT_BORI).json()[0]["photo"]
     import os
     for d in dogs.values():
         assert os.path.exists(os.path.join("frontend", d["photo"])), d["photo"]

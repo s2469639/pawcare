@@ -1,4 +1,5 @@
 """PawCare FastAPI 앱. 실행: uvicorn backend.main:app --reload"""
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,7 +14,9 @@ import re
 from fastapi.responses import FileResponse
 
 from .database import ROOT, connect, init_db, upload_dir
-from .routes import ai, dogs, misc, records, routine, tasks
+from . import auth as auth_lib
+from .deps import FieldError
+from .routes import ai, auth, dogs, invites, misc, records, routine, tasks
 from .seed import seed
 
 
@@ -35,6 +38,9 @@ async def lifespan(app: FastAPI):
         init_db(conn)
         if conn.execute("SELECT COUNT(*) FROM organizations").fetchone()[0] == 0:
             seed(conn)
+        if not auth_lib.demo_mode() and conn.execute("SELECT 1 FROM accounts WHERE is_demo=1").fetchone():
+            logging.getLogger("uvicorn.error").warning(
+                "데모 계정이 있습니다(공개 비밀번호). 인터넷에 공개하기 전에 데모 계정을 삭제하세요. 로컬 시연은 .env의 DEMO_MODE=1을 사용하세요.")
     finally:
         conn.close()
     yield
@@ -52,6 +58,11 @@ async def validation_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(status_code=422, content={"detail": "입력값을 확인해 주세요.", "errors": msgs})
 
 
+@app.exception_handler(FieldError)
+async def field_error_handler(request: Request, exc: FieldError):
+    return JSONResponse(status_code=exc.status, content={"detail": exc.message, "errors": [{"field": exc.field, "message": exc.message}]})
+
+
 @app.exception_handler(Exception)
 async def unhandled(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."})
@@ -59,10 +70,11 @@ async def unhandled(request: Request, exc: Exception):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "ai_configured": bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"))}
+    return {"ok": True, "demo_mode": auth_lib.demo_mode(),
+            "ai_configured": bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"))}
 
 
-for r in (misc.router, dogs.router, records.router, tasks.router, ai.router, routine.router):
+for r in (auth.router, invites.router, misc.router, dogs.router, records.router, tasks.router, ai.router, routine.router):
     app.include_router(r)
 
 _FILE = re.compile(r"^[A-Za-z0-9._-]+\.(webp|jpg|png)$")

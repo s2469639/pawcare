@@ -3,7 +3,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from .database import KST, SAMPLE_PHOTOS, TABLES, ensure_routine, init_db
+from .database import KST, SAMPLE_PHOTOS, TABLES, ensure_routine, init_db, now_iso
 
 
 def _t(hour: int, minute: int = 0) -> str:
@@ -97,4 +97,29 @@ def seed(conn: sqlite3.Connection) -> None:
          note="음수 확인 후 기록에 반영했습니다.", done=_t(11, 50))
     task(2, 6, r_cloud, "식사량 기록 확인", "점심 식사량 기록을 확인합니다.", 4, 4, "pending", "todo", _t(12, 5))
     ensure_routine(c)
+    seed_accounts(c)
     c.commit()
+
+
+# 데모 계정(가상): 이름 → 이메일. 모두 같은 공개 비밀번호를 쓰므로 인터넷 공개 배포에는 사용하지 않는다.
+DEMO_EMAILS = {"한지우": "jiwoo.han", "서민재": "minjae.seo", "정하은": "haeun.jung", "오하준": "hajun.oh",
+               "김서연": "seoyeon.kim", "박도윤": "doyun.park", "이수아": "sua.lee"}
+DEMO_PARENT_DOGS = ("보리", "두부", "모카")     # 이 반려견의 보호자만 데모 계정을 만들고, 나머지는 초대 코드 시연용으로 비워 둔다
+
+
+def seed_accounts(conn: sqlite3.Connection) -> None:
+    """계정이 하나도 없을 때만 샘플 직원·보호자의 데모 계정을 만든다(멱등)."""
+    from . import auth
+    if conn.execute("SELECT 1 FROM accounts LIMIT 1").fetchone() or not conn.execute("SELECT 1 FROM staff LIMIT 1").fetchone():
+        return
+    pw = auth.hash_password(auth.demo_password())      # 데모 계정은 해시를 공유해 시드 시간을 줄인다
+    for s in conn.execute("SELECT * FROM staff ORDER BY id").fetchall():
+        local = DEMO_EMAILS.get(s["name"]) or f"staff{s['id']}"
+        email = f"{local}@pawcare.demo"
+        conn.execute("INSERT INTO accounts(org_id,email,name,password_hash,role,staff_id,is_demo,created_at) VALUES (?,?,?,?,?,?,1,?)",
+                     (s["org_id"], email, s["name"], pw, "staff", s["id"], now_iso()))
+    for d in conn.execute("SELECT * FROM dogs ORDER BY id").fetchall():
+        if d["name"] in DEMO_PARENT_DOGS and d["owner_name"] in DEMO_EMAILS:
+            cur = conn.execute("INSERT INTO accounts(org_id,email,name,password_hash,role,is_demo,created_at) VALUES (?,?,?,?,?,1,?)",
+                               (d["org_id"], f"{DEMO_EMAILS[d['owner_name']]}@pawcare.demo", d["owner_name"], pw, "parent", now_iso()))
+            conn.execute("INSERT INTO guardian_dogs(account_id,dog_id) VALUES (?,?)", (cur.lastrowid, d["id"]))

@@ -116,11 +116,51 @@ CREATE TABLE IF NOT EXISTS task_action_logs (
     note TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('staff','parent')),
+    staff_id INTEGER REFERENCES staff(id),
+    is_demo INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS guardian_dogs (
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    dog_id INTEGER NOT NULL REFERENCES dogs(id),
+    PRIMARY KEY (account_id, dog_id)
+);
+CREATE TABLE IF NOT EXISTS invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code_hash TEXT NOT NULL UNIQUE,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    dog_id INTEGER NOT NULL REFERENCES dogs(id),
+    created_by INTEGER NOT NULL REFERENCES staff(id),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    used_by INTEGER REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attempts ON login_attempts(key, at);
 CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id, action_status);
 CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 """
 
-TABLES = ["task_action_logs", "tasks", "care_records", "routine_blocks", "dogs", "staff", "organizations"]
+TABLES = ["sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
+          "care_records", "routine_blocks", "dogs", "staff", "organizations"]
 
 
 SAMPLE_PHOTOS = {"보리": "bori", "두부": "tofu", "모카": "mocha", "밤이": "bami", "콩이": "kongi", "구름": "cloud"}
@@ -171,6 +211,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         for name, f in SAMPLE_PHOTOS.items():
             conn.execute("UPDATE dogs SET photo=? WHERE name=? AND photo IS NULL", (f"assets/dogs/{f}.webp", name))
     ensure_routine(conn)
+    from .seed import seed_accounts   # 이전 버전 DB: 계정이 하나도 없으면 샘플 직원·보호자의 데모 계정을 만든다
+    seed_accounts(conn)
     conn.commit()
 
 

@@ -4,7 +4,8 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import KST, connect, get_db
-from ..deps import current_staff
+from ..deps import current_parent, current_staff
+from .auth import require_demo
 from ..seed import reset
 from .common import TASK_SELECT, dog_dict, task_dict, today_prefix
 from datetime import datetime
@@ -12,16 +13,9 @@ from datetime import datetime
 router = APIRouter(prefix="/api", tags=["misc"])
 
 
-@router.get("/demo/staff")
-def demo_staff(db: sqlite3.Connection = Depends(get_db)):
-    """데모용 직원 선택 목록(로그인 대체). 실서비스에서는 인증으로 교체."""
-    return [dict(r) for r in db.execute(
-        "SELECT s.id, s.name, s.role, s.org_id, o.name AS org_name FROM staff s "
-        "JOIN organizations o ON o.id=s.org_id ORDER BY s.id")]
-
-
-@router.post("/demo/reset")
+@router.post("/demo/reset", dependencies=[Depends(require_demo)])
 def demo_reset():
+    """데모 모드 전용: 샘플 데이터를 처음 상태로 되돌린다(모든 세션도 함께 초기화됨)."""
     conn = connect()
     try:
         reset(conn)
@@ -54,22 +48,22 @@ def dashboard(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get
 
 
 @router.get("/parent/dogs")
-def parent_dogs(db: sqlite3.Connection = Depends(get_db)):
-    """보호자 데모: 샘플 유치원(첫 번째 조직)의 반려견만 노출. 내부 정보는 포함하지 않는다."""
-    return [{"id": r["id"], "name": r["name"], "breed": r["breed"], "owner_name": r["owner_name"],
-             "avatar_color": r["avatar_color"], "photo": r["photo"]}
-            for r in db.execute("SELECT * FROM dogs WHERE org_id=(SELECT MIN(id) FROM organizations) ORDER BY id")]
+def parent_dogs(parent=Depends(current_parent), db: sqlite3.Connection = Depends(get_db)):
+    """보호자 본인에게 연결된 반려견만. 내부 정보는 포함하지 않는다."""
+    return [{"id": r["id"], "name": r["name"], "breed": r["breed"], "avatar_color": r["avatar_color"], "photo": r["photo"]}
+            for r in db.execute("SELECT d.* FROM guardian_dogs g JOIN dogs d ON d.id=g.dog_id WHERE g.account_id=? ORDER BY d.id", (parent["id"],))]
 
 
 @router.get("/parent/dogs/{dog_id}/preview")
-def parent_preview(dog_id: int, db: sqlite3.Connection = Depends(get_db)):
-    dog = db.execute("SELECT * FROM dogs WHERE id=? AND org_id=(SELECT MIN(id) FROM organizations)", (dog_id,)).fetchone()
+def parent_preview(dog_id: int, parent=Depends(current_parent), db: sqlite3.Connection = Depends(get_db)):
+    dog = db.execute("SELECT d.* FROM guardian_dogs g JOIN dogs d ON d.id=g.dog_id WHERE g.account_id=? AND d.id=?",
+                     (parent["id"], dog_id)).fetchone()
     if dog is None:
-        raise HTTPException(404, "반려견을 찾을 수 없습니다.")
+        raise HTTPException(404, "반려견을 찾을 수 없습니다.")   # 남의 아이와 없는 아이를 구분하지 않는다
     recs = db.execute(
         "SELECT id, record_type, parent_text, parent_approved_at FROM care_records "
         "WHERE dog_id=? AND parent_status='approved' ORDER BY observed_at DESC", (dog_id,))
     d = dog_dict(dog)
     return {"dog": {"id": d["id"], "name": d["name"], "breed": d["breed"], "age_text": d["age_text"],
-                    "owner_name": d["owner_name"], "avatar_color": d["avatar_color"], "photo": d["photo"]},
+                    "avatar_color": d["avatar_color"], "photo": d["photo"]},
             "records": [dict(r) for r in recs]}
