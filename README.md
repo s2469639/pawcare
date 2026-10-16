@@ -6,6 +6,42 @@
 
 ![오늘의 업무 대시보드](docs/screenshots/02-dashboard.png)
 
+## 🚀 빠른 실행 (까먹었을 때 여기만 보세요)
+
+**① 터미널을 열고, 프로젝트 폴더(`backend` 폴더와 `README.md`가 보이는 곳)로 이동**
+```
+cd 프로젝트폴더경로
+```
+
+**② 처음 한 번만: 설치 + 설정 파일 만들기** (이미 했다면 건너뛰기)
+```
+pip install -r requirements.txt
+copy .env.example .env          ← Windows       /       cp .env.example .env   ← Mac·Linux
+```
+`.env` 파일에 `DEMO_MODE=1`이 있어야 로그인 없이 바로 시연할 수 있습니다. (Gemini 키는 선택 사항)
+
+**③ 서버 켜기** — 이 터미널은 켜 둔 채로 두세요 (닫으면 서버도 꺼집니다)
+```
+python -m uvicorn backend.main:app --reload
+```
+`python`이 안 되면 `py -m uvicorn backend.main:app --reload` 로 입력하세요.
+`Uvicorn running on http://127.0.0.1:8000` 이 보이면 성공입니다.
+
+**④ 브라우저에서 열기** → **http://localhost:8000**
+"선생님으로 시작하기" 또는 "보호자로 시작하기"를 누르면 로그인 없이 들어갑니다.
+
+**⑤ 끄기** → 서버 터미널에서 `Ctrl + C`
+
+| 이럴 땐 | 이렇게 |
+|---|---|
+| 페이지가 안 열려요 | ③의 서버 터미널이 켜져 있는지, 주소가 `http://localhost:8000`인지 확인 |
+| `No module named backend` | 프로젝트 맨 위 폴더가 아니라 다른 폴더에서 실행한 것 → ①부터 다시 |
+| `No module named ...` (그 외) | `pip install -r requirements.txt` |
+| `Address already in use` | 이미 켜진 서버가 있음 → 그 터미널을 끄거나 `--port 8001`을 붙이고 `localhost:8001`로 접속 |
+| 로그인 화면이 먼저 나와요 | `.env`에 `DEMO_MODE=1` 추가 후 서버 다시 켜기 (데모 계정은 아래 "시연 모드와 로그인 모드") |
+| 코드를 새로 받았어요 | `git pull origin claude` → `pip install -r requirements.txt` → 서버 다시 켜기 |
+
+
 ## 이 프로토타입이 보여주려는 것
 
 기록이 작성됐다는 사실과 *필요한 일이 실제로 처리됐다*는 사실은 다릅니다. PawCare는 이 둘을 분리해서 다룹니다.
