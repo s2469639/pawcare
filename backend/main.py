@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from .database import ROOT, connect, get_db, init_db, upload_dir
 from . import auth as auth_lib
 from .deps import FieldError, current_account
-from .routes import ai, auth, dogs, invites, media, misc, records, routine, tasks
+from .routes import ai, auth, dogs, invites, media, misc, parent, records, routine, tasks
 from .seed import seed
 
 
@@ -75,7 +75,7 @@ def health():
             "ai_configured": bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"))}
 
 
-for r in (auth.router, invites.router, misc.router, dogs.router, media.router, records.router, tasks.router, ai.router, routine.router):
+for r in (auth.router, invites.router, misc.router, parent.router, dogs.router, media.router, records.router, tasks.router, ai.router, routine.router):
     app.include_router(r)
 
 _FILE = re.compile(r"^[A-Za-z0-9._-]+\.(webp|jpg|png)$")

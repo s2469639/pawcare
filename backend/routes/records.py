@@ -2,8 +2,8 @@ import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..database import block_for, get_db, now_iso
-from ..deps import current_staff, get_dog_or_404, get_staff_in_org
+from ..database import block_for, get_db, now_iso, now_precise
+from ..deps import FieldError, current_staff, get_dog_or_404, get_staff_in_org
 from ..schemas import ApprovalBody, RecordCreate
 from .common import today_prefix
 from .media import attach_media
@@ -62,15 +62,46 @@ def create_record(body: RecordCreate, staff=Depends(current_staff), db: sqlite3.
 @router.patch("/{record_id}/parent-approval")
 def parent_approval(record_id: int, body: ApprovalBody, staff=Depends(current_staff),
                     db: sqlite3.Connection = Depends(get_db)):
+    """보호자 공개 승인/취소. 공개 대상은 '반려견별'로 저장한다: 사진은 직원이 고른 아이의 보호자에게만 보이고,
+    글(parent_text)은 기록의 반려견 보호자에게만 보인다(다른 아이의 글이 새지 않게)."""
     r = db.execute("SELECT * FROM care_records WHERE id=? AND org_id=?", (record_id, staff["org_id"])).fetchone()
     if r is None:
         raise HTTPException(404, "기록을 찾을 수 없습니다.")
-    if body.action == "approve":
-        if not body.parent_text:
-            raise HTTPException(422, "보호자에게 보여줄 문구를 입력해 주세요.")
-        db.execute("UPDATE care_records SET parent_status='approved', parent_text=?, parent_approved_by=?,"
-                   " parent_approved_at=? WHERE id=?", (body.parent_text, staff["id"], now_iso(), record_id))
-    else:
+    media_ids = [m["id"] for m in db.execute("SELECT id FROM media WHERE record_id=?", (record_id,))]
+    if media_ids:
+        db.execute(f"DELETE FROM media_shares WHERE media_id IN ({','.join('?' * len(media_ids))})", media_ids)   # 승인 내용은 항상 새로 정한다
+    if body.action == "revoke":
         db.execute("UPDATE care_records SET parent_status='private', parent_text=NULL, parent_approved_by=NULL,"
                    " parent_approved_at=NULL WHERE id=?", (record_id,))
-    return dict(db.execute(BASE + "WHERE r.id=?", (record_id,)).fetchone())
+        return attach_media(db, [dict(db.execute(BASE + "WHERE r.id=?", (record_id,)).fetchone())])[0]
+    text = (body.parent_text or "").strip()
+    shares: list[tuple[int, int]] = []
+    seen = set()
+    for m in body.media:
+        if m.media_id not in media_ids:
+            raise HTTPException(422, "이 기록에 첨부된 사진이 아닙니다.")
+        if m.media_id in seen:
+            raise HTTPException(422, "같은 사진이 중복 선택되었습니다.")
+        seen.add(m.media_id)
+        tagged = {x["dog_id"] for x in db.execute("SELECT dog_id FROM media_dogs WHERE media_id=?", (m.media_id,))}
+        for dog_id in sorted(set(m.dog_ids)):
+            if dog_id not in tagged:
+                raise HTTPException(422, "사진에 태그되지 않은 반려견의 보호자에게는 공개할 수 없습니다.")
+            shares.append((m.media_id, dog_id))
+    if not text and not shares:
+        raise FieldError("parent_text", "보호자에게 보여줄 문구를 입력하거나 공개할 사진을 선택해 주세요.")
+    # 동의가 확인되지 않았거나 퇴원한 반려견의 자료는 공개할 수 없다
+    for dog_id in {r["dog_id"]} | {d for _, d in shares}:
+        dog = db.execute("SELECT name, consent_at, attending FROM dogs WHERE id=? AND org_id=?", (dog_id, staff["org_id"])).fetchone()
+        if dog is None:
+            raise HTTPException(404, "반려견을 찾을 수 없습니다.")
+        if not dog["consent_at"]:
+            raise HTTPException(409, f"{dog['name']}의 보호자 동의가 확인되지 않아 공개할 수 없습니다. 반려견 프로필에서 동의 확인을 기록해 주세요.")
+        if not dog["attending"]:
+            raise HTTPException(409, f"{dog['name']}은(는) 퇴원 처리되어 새로 공개할 수 없습니다.")
+    now = now_precise()
+    db.execute("UPDATE care_records SET parent_status='approved', parent_text=?, parent_approved_by=?, parent_approved_at=? WHERE id=?",
+               (text, staff["id"], now, record_id))
+    db.executemany("INSERT INTO media_shares(media_id,dog_id,approved_by,approved_at) VALUES (?,?,?,?)",
+                   [(mid, did, staff["id"], now) for mid, did in shares])
+    return attach_media(db, [dict(db.execute(BASE + "WHERE r.id=?", (record_id,)).fetchone())])[0]

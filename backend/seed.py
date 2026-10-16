@@ -45,8 +45,8 @@ def seed(conn: sqlite3.Connection) -> None:
         (2, "구름", "골든 리트리버", "2021-03-12", "#A5AE98", "윤재희", ctx("건식 사료", "", "", "", "")),
     ]
     c.executemany(
-        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,photo) VALUES (?,?,?,?,?,?,?,?)",
-        [(*d, f"assets/dogs/{SAMPLE_PHOTOS[d[1]]}.webp") for d in dogs])
+        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,photo,consent_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        [(*d, f"assets/dogs/{SAMPLE_PHOTOS[d[1]]}.webp", now_iso()) for d in dogs])
 
     def rec(org, dog, author, typ, sv, content, at, status="private", ptext=None, by=None):
         cur = c.execute(

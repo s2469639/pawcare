@@ -16,6 +16,11 @@ def now_iso() -> str:
     return datetime.now(KST).replace(microsecond=0, tzinfo=None).isoformat()
 
 
+def now_precise() -> str:
+    """마이크로초까지 기록하는 시각. '새 알림장' 판정처럼 같은 초 안의 선후를 구분해야 할 때 쓴다(문자열 비교가 시간 순서와 일치)."""
+    return datetime.now(KST).replace(tzinfo=None).isoformat(timespec="microseconds")
+
+
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(db_path(), check_same_thread=False)  # 요청 1개 = 연결 1개(순차 사용)
     conn.row_factory = sqlite3.Row
@@ -68,7 +73,8 @@ CREATE TABLE IF NOT EXISTS dogs (
     owner_name TEXT NOT NULL,
     care_context TEXT NOT NULL DEFAULT '{}',
     attending INTEGER NOT NULL DEFAULT 1,
-    photo TEXT
+    photo TEXT,
+    consent_at TEXT
 );
 CREATE TABLE IF NOT EXISTS care_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +141,19 @@ CREATE TABLE IF NOT EXISTS media_dogs (
     PRIMARY KEY (media_id, dog_id)
 );
 CREATE INDEX IF NOT EXISTS idx_media_record ON media(record_id);
+CREATE TABLE IF NOT EXISTS media_shares (
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    dog_id INTEGER NOT NULL REFERENCES dogs(id),
+    approved_by INTEGER NOT NULL REFERENCES staff(id),
+    approved_at TEXT NOT NULL,
+    PRIMARY KEY (media_id, dog_id)
+);
+CREATE TABLE IF NOT EXISTS parent_reads (
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    dog_id INTEGER NOT NULL REFERENCES dogs(id),
+    seen_at TEXT NOT NULL,
+    PRIMARY KEY (account_id, dog_id)
+);
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     org_id INTEGER NOT NULL REFERENCES organizations(id),
@@ -178,7 +197,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id, action_status);
 CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 """
 
-TABLES = ["media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
+TABLES = ["parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
           "care_records", "routine_blocks", "dogs", "staff", "organizations"]
 
 
@@ -229,6 +248,11 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dogs ADD COLUMN photo TEXT")
         for name, f in SAMPLE_PHOTOS.items():
             conn.execute("UPDATE dogs SET photo=? WHERE name=? AND photo IS NULL", (f"assets/dogs/{f}.webp", name))
+    if "consent_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}:
+        conn.execute("ALTER TABLE dogs ADD COLUMN consent_at TEXT")
+        # 샘플 반려견은 시연을 위해 동의를 받은 것으로 둔다(직접 등록한 반려견은 프로필에서 동의 확인 기록 필요)
+        conn.execute(f"UPDATE dogs SET consent_at=? WHERE name IN ({','.join('?' * len(SAMPLE_PHOTOS))}) AND consent_at IS NULL",
+                     (now_iso(), *SAMPLE_PHOTOS))
     ensure_routine(conn)
     from .seed import seed_accounts   # 이전 버전 DB: 계정이 하나도 없으면 샘플 직원·보호자의 데모 계정을 만든다
     seed_accounts(conn)

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .. import auth
-from ..database import get_db, now_iso
+from ..database import get_db, now_iso, now_precise
 from ..deps import COOKIE, FieldError, session_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -124,6 +124,7 @@ def register(body: RegisterBody, request: Request, response: Response, db: sqlit
     cur = db.execute("INSERT INTO accounts(org_id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
                      (inv["org_id"], email, name, auth.hash_password(body.password), "parent", now_iso()))
     db.execute("INSERT INTO guardian_dogs(account_id,dog_id) VALUES (?,?)", (cur.lastrowid, inv["dog_id"]))
+    db.execute("INSERT INTO parent_reads(account_id,dog_id,seen_at) VALUES (?,?,?)", (cur.lastrowid, inv["dog_id"], now_precise()))
     db.execute("UPDATE invites SET used_by=? WHERE id=?", (cur.lastrowid, inv["id"]))
     _set_cookie(request, response, auth.create_session(db, cur.lastrowid))
     row = db.execute("SELECT * FROM accounts WHERE id=?", (cur.lastrowid,)).fetchone()

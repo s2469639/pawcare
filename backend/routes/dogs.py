@@ -118,9 +118,9 @@ def create_dog(body: DogCreate, staff=Depends(current_staff), db: sqlite3.Connec
     ctx.update(body.care_context or {})
     n = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=?", (org,)).fetchone()[0]
     cur = db.execute(
-        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,consent_at) VALUES (?,?,?,?,?,?,?,?)",
         (org, body.name, body.breed, body.birth_date, AVATAR_COLORS[n % len(AVATAR_COLORS)], body.owner_name,
-         json.dumps(ctx, ensure_ascii=False)))
+         json.dumps(ctx, ensure_ascii=False), now_iso() if body.consent_confirmed else None))
     return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (cur.lastrowid,)).fetchone())
 
 
@@ -154,4 +154,13 @@ def delete_photo(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connecti
     dog = get_dog_or_404(db, dog_id, staff["org_id"])
     _remove_uploaded(dog["photo"])
     db.execute("UPDATE dogs SET photo=NULL WHERE id=?", (dog_id,))
+    return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())
+
+
+@router.post("/{dog_id}/consent")
+def record_consent(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
+    """보호자에게 사진 공유와 퇴원 후 3개월 뒤 삭제에 대한 동의를 받았음을 기록한다(동의서 자체는 이 앱 밖에서 받는다고 가정)."""
+    dog = get_dog_or_404(db, dog_id, staff["org_id"])
+    if not dog["consent_at"]:
+        db.execute("UPDATE dogs SET consent_at=? WHERE id=?", (now_iso(), dog_id))
     return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())

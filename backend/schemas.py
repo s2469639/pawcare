@@ -34,9 +34,15 @@ class RecordCreate(BaseModel):
             raise ValueError("기록 시각 형식이 올바르지 않습니다.")
 
 
+class MediaShare(BaseModel):
+    media_id: int
+    dog_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
 class ApprovalBody(BaseModel):
     action: Literal["approve", "revoke"]
     parent_text: Optional[str] = Field(default=None, max_length=500)
+    media: list[MediaShare] = Field(default_factory=list, max_length=10)     # 사진별로 어느 아이의 보호자에게 공개할지
 
     _s = field_validator("parent_text", mode="before")(_strip)
 
@@ -134,6 +140,7 @@ class DogCreate(BaseModel):
     birth_date: str
     owner_name: str = Field(min_length=1, max_length=40)
     care_context: Optional[dict[str, str]] = None
+    consent_confirmed: bool = False          # 보호자 동의(사진 공유, 퇴원 후 3개월 뒤 삭제)를 받았음을 직원이 확인
 
     _s = field_validator("name", "breed", "owner_name", mode="before")(_strip)
     _b = field_validator("birth_date")(_check_birth)

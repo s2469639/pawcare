@@ -53,8 +53,10 @@ def media_view(db, rows) -> list[dict]:
     out = []
     for r in rows:
         dogs = db.execute("SELECT d.id, d.name FROM media_dogs m JOIN dogs d ON d.id=m.dog_id WHERE m.media_id=? ORDER BY d.id", (r["id"],)).fetchall()
+        shared = [x["dog_id"] for x in db.execute("SELECT dog_id FROM media_shares WHERE media_id=? ORDER BY dog_id", (r["id"],))]
         out.append({"id": r["id"], "record_id": r["record_id"], "width": r["width"], "height": r["height"], "created_at": r["created_at"],
-                    "uploaded_by": r["uploaded_by"], "dog_ids": [d["id"] for d in dogs], "dog_names": [d["name"] for d in dogs]})
+                    "uploaded_by": r["uploaded_by"], "dog_ids": [d["id"] for d in dogs], "dog_names": [d["name"] for d in dogs],
+                    "shared_dog_ids": shared})
     return out
 
 
@@ -151,6 +153,8 @@ def tag_media(media_id: int, body: TagBody, staff=Depends(current_staff), db: sq
     ids = _check_dogs(db, body.dog_ids, staff["org_id"])
     db.execute("DELETE FROM media_dogs WHERE media_id=?", (media_id,))
     db.executemany("INSERT INTO media_dogs(media_id,dog_id) VALUES (?,?)", [(media_id, d) for d in ids])
+    # 사진에서 태그가 빠진 아이의 보호자에게는 더 이상 공개하지 않는다(공개 대상은 항상 태그된 아이의 부분집합)
+    db.execute(f"DELETE FROM media_shares WHERE media_id=? AND dog_id NOT IN ({','.join('?' * len(ids))})", (media_id, *ids))
     return media_view(db, [r])[0]
 
 
