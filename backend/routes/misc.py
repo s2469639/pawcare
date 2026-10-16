@@ -57,7 +57,7 @@ def dashboard(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get
 def parent_dogs(db: sqlite3.Connection = Depends(get_db)):
     """보호자 데모: 샘플 유치원(첫 번째 조직)의 반려견만 노출. 내부 정보는 포함하지 않는다."""
     return [{"id": r["id"], "name": r["name"], "breed": r["breed"], "owner_name": r["owner_name"],
-             "avatar_color": r["avatar_color"]}
+             "avatar_color": r["avatar_color"], "photo": r["photo"]}
             for r in db.execute("SELECT * FROM dogs WHERE org_id=(SELECT MIN(id) FROM organizations) ORDER BY id")]
 
 
@@ -71,5 +71,5 @@ def parent_preview(dog_id: int, db: sqlite3.Connection = Depends(get_db)):
         "WHERE dog_id=? AND parent_status='approved' ORDER BY observed_at DESC", (dog_id,))
     d = dog_dict(dog)
     return {"dog": {"id": d["id"], "name": d["name"], "breed": d["breed"], "age_text": d["age_text"],
-                    "owner_name": d["owner_name"], "avatar_color": d["avatar_color"]},
+                    "owner_name": d["owner_name"], "avatar_color": d["avatar_color"], "photo": d["photo"]},
             "records": [dict(r) for r in recs]}

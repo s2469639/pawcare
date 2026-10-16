@@ -186,3 +186,30 @@ def test_only_assignee_or_admin_can_act(client):
     assert client.get("/api/tasks/1", headers=MORNING).json()["acknowledgment_status"] == "pending"
     assert client.post("/api/tasks/1/actions", json={"action_type": "comment", "note": "메모"}, headers=MORNING).status_code == 200
     assert client.post("/api/tasks/1/actions", json={"action_type": "acknowledge"}, headers=ADMIN).status_code == 200
+
+
+def test_dog_photos_in_api(client):
+    dogs = {d["name"]: d for d in client.get("/api/dogs", headers=MORNING).json()}
+    assert dogs["보리"]["photo"] == "assets/dogs/bori.webp"
+    t = client.get("/api/tasks/1", headers=MORNING).json()
+    assert t["dog_photo"] == "assets/dogs/bori.webp"
+    assert client.get("/api/parent/dogs").json()[0]["photo"]
+    import os
+    for d in dogs.values():
+        assert os.path.exists(os.path.join("frontend", d["photo"])), d["photo"]
+
+
+def test_migration_adds_photo_column_to_old_db(tmp_path):
+    import sqlite3
+    from backend import database
+    db = tmp_path / "old.db"
+    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+    c.executescript(database.SCHEMA.replace(",\n    photo TEXT", ""))   # photo 컬럼이 없던 이전 스키마
+    c.execute("INSERT INTO organizations(name) VALUES ('x')")
+    c.execute("INSERT INTO dogs(org_id,name,breed,birth_date,owner_name) VALUES (1,'보리','푸들','2022-04-10','a'),(1,'새친구','믹스','2022-04-10','b')")
+    c.commit()
+    assert "photo" not in {r["name"] for r in c.execute("PRAGMA table_info(dogs)")}
+    database.init_db(c)
+    rows = {r["name"]: r["photo"] for r in c.execute("SELECT name, photo FROM dogs")}
+    assert rows == {"보리": "assets/dogs/bori.webp", "새친구": None}    # 샘플 이름만 채우고 사용자 데이터는 건드리지 않음
+    database.init_db(c)  # 두 번 실행해도 안전

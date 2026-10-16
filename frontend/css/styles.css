@@ -102,7 +102,8 @@ a.stat:hover { border-color: var(--sage); }
 .b-private { background: var(--paper); color: var(--gray); }
 
 /* ---------- avatar ---------- */
-.avatar { width: 40px; height: 40px; border-radius: 50%; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-family: var(--serif); font-weight: 700; font-size: 17px; flex: none; }
+.avatar { position: relative; overflow: hidden; width: 40px; height: 40px; border-radius: 50%; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-family: var(--serif); font-weight: 700; font-size: 17px; flex: none; }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .avatar.lg { width: 72px; height: 72px; font-size: 30px; } .avatar.sm { width: 30px; height: 30px; font-size: 13px; }
 
 /* ---------- task rows ---------- */
@@ -142,7 +143,7 @@ textarea.input { resize: vertical; min-height: 88px; line-height: 1.5; }
 .dog-card .name { font-family: var(--serif); font-weight: 700; font-size: 18px; }
 .dog-card .row { font-size: 13px; color: #4b5a51; display: flex; gap: 6px; }
 .dog-card .row b { color: var(--gray); font-weight: 500; flex: none; width: 48px; }
-.kv { display: grid; grid-template-columns: 120px 1fr; gap: 0; }
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 0 12px; }
 .kv > div { padding: 10px 0; border-top: 1px solid var(--border); }
 .kv > div:nth-child(-n+2) { border-top: 0; }
 .kv .k { color: var(--gray); font-size: 13.5px; }

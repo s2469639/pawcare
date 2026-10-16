@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS dogs (
     avatar_color TEXT NOT NULL DEFAULT '#A5AE98',
     owner_name TEXT NOT NULL,
     care_context TEXT NOT NULL DEFAULT '{}',
-    attending INTEGER NOT NULL DEFAULT 1
+    attending INTEGER NOT NULL DEFAULT 1,
+    photo TEXT
 );
 CREATE TABLE IF NOT EXISTS care_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,8 +111,16 @@ CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 TABLES = ["task_action_logs", "tasks", "care_records", "dogs", "staff", "organizations"]
 
 
+SAMPLE_PHOTOS = {"보리": "bori", "두부": "tofu", "모카": "mocha", "밤이": "bami", "콩이": "kongi", "구름": "cloud"}
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # 마이그레이션: photo 컬럼이 없는 기존 DB에 추가하고, 샘플 반려견에만 샘플 사진을 연결한다.
+    if "photo" not in {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}:
+        conn.execute("ALTER TABLE dogs ADD COLUMN photo TEXT")
+        for name, f in SAMPLE_PHOTOS.items():
+            conn.execute("UPDATE dogs SET photo=? WHERE name=? AND photo IS NULL", (f"assets/dogs/{f}.webp", name))
     conn.commit()
 
 

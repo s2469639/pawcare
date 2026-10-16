@@ -90,7 +90,7 @@ export async function taskDetailView(ctx) {
     <div class="detail">
       <div class="stack">
         <div class="card">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><a class="task-dog" href="#/dogs/${t.dog_id}">${avatar({ name: t.dog_name, avatar_color: t.dog_color }, 'sm')} ${t.dog_name}</a>${prioBadge(t)}${t.ai_suggested ? html`<span class="badge b-ai">${icon('spark')} AI 제안을 직원이 승인</span>` : ''}</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><a class="task-dog" href="#/dogs/${t.dog_id}">${avatar({ name: t.dog_name, avatar_color: t.dog_color, photo: t.dog_photo }, 'sm')} ${t.dog_name}</a>${prioBadge(t)}${t.ai_suggested ? html`<span class="badge b-ai">${icon('spark')} AI 제안을 직원이 승인</span>` : ''}</div>
           <h1>${t.title}</h1>
           <p style="margin-top:8px">${t.description || html`<span class="muted">설명 없음</span>`}</p>
           ${done ? '' : html`<p style="margin-top:10px"><button class="btn sm secondary" id="edit">${icon('pen')} 제목·설명 수정</button></p>`}

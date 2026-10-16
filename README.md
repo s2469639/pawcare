@@ -114,6 +114,7 @@ backend/    FastAPI + SQLite
             services/    ai_service.py (데모 분석 + Gemini + 출력 검증)
             list_models.py  내 키로 쓸 수 있는 Gemini 모델 목록 출력
 frontend/   Vanilla JS(ES modules) SPA, 직접 작성한 CSS (Ivory · Sage · Forest Ink · Clay)
+            assets/dogs/  샘플 반려견 프로필 사진(더미). 사진이 없거나 불러오지 못하면 이니셜 아바타로 대체
 tests/      pytest(API) · e2e_scenario.py(브라우저) · capture_screenshots.py
 docs/       시연 화면 캡처
 ```
@@ -152,4 +153,5 @@ e2e는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수�
 - **Gemini 실제 호출은 검증하지 못했습니다.** 개발 환경에 키가 없어, 출력 검증 로직과 실패 시 데모 분석으로의 대체 동작만 테스트했습니다.
 - 푸시/카카오 알림, 예약·결제, 음성, CCTV, 의료 연동, 실시간 다중 사용자 동기화는 범위 밖입니다. 상단 알림 아이콘은 내게 배정된 확인 대기 업무 수를 보여줄 뿐 실제 푸시가 아닙니다.
 - 보호자 화면은 승인된 기록 미리보기까지입니다. 시각은 한국 표준시(KST) 기준입니다.
+- 반려견 프로필 사진은 시연용 더미 이미지입니다. 실제 반려견 사진이 아니며, 사진 업로드 기능은 아직 없습니다(`dogs.photo`에 경로를 저장하는 구조만 준비).
 - 샘플 데이터의 "알레르기·민감성" 등은 시연용 가상 정보이며 실제 건강 정보가 아닙니다.

@@ -1,8 +1,12 @@
-import { html, icon, fmtTime, fmtWhen, canAct, esc } from './util.js';
+import { html, icon, fmtTime, fmtWhen, canAct, esc, raw } from './util.js';
 import { ApiError } from './api.js';
 
-export const avatar = (dog, size = '') =>
-  html`<span class="avatar ${size}" style="background:${dog.avatar_color || dog.dog_color || '#A5AE98'}" aria-hidden="true">${(dog.name || dog.dog_name || '?').slice(0, 1)}</span>`;
+/** 사진이 있으면 원형 사진, 없거나 불러오지 못하면 이니셜 아바타로 대체 */
+export const avatar = (dog, size = '') => {
+  const name = dog.name || dog.dog_name || '?';
+  const photo = dog.photo || dog.dog_photo;
+  return html`<span class="avatar ${size}" style="background:${dog.avatar_color || dog.dog_color || '#A5AE98'}" aria-hidden="true">${name.slice(0, 1)}${photo ? raw(`<img src="${esc(photo)}" alt="" loading="lazy" onerror="this.remove()">`) : ''}</span>`;
+};
 
 export const ackBadge = (t) => t.acknowledgment_status === 'pending'
   ? html`<span class="badge b-pending">${icon('clock')} 확인 대기</span>`
@@ -34,7 +38,7 @@ export function taskRow(t, staff, { quick = true, showDog = true } = {}) {
     }
   }
   return html`<article class="task-row ${stateClass(t)}" data-task="${t.id}">
-    ${showDog ? html`<a class="task-dog" href="#/dogs/${t.dog_id}">${avatar({ name: t.dog_name, avatar_color: t.dog_color }, 'sm')}<span>${t.dog_name}</span></a>` : html`<span></span>`}
+    ${showDog ? html`<a class="task-dog" href="#/dogs/${t.dog_id}">${avatar({ name: t.dog_name, avatar_color: t.dog_color, photo: t.dog_photo }, 'sm')}<span>${t.dog_name}</span></a>` : html`<span></span>`}
     <div>
       <a class="task-title" href="#/tasks/${t.id}">${t.title}</a>
       ${t.description ? html`<p class="task-desc">${t.description}</p>` : ''}

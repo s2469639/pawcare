@@ -5,7 +5,7 @@ from datetime import date, datetime
 from ..database import KST
 
 TASK_SELECT = """
-SELECT t.*, d.name AS dog_name, d.avatar_color AS dog_color,
+SELECT t.*, d.name AS dog_name, d.avatar_color AS dog_color, d.photo AS dog_photo,
        a.name AS assignee_name, a.role AS assignee_role,
        c.name AS creator_name, c.role AS creator_role,
        k.name AS ack_by_name,
