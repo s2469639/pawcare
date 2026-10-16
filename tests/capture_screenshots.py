@@ -58,6 +58,27 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/parent"); page.get_by_role("button", name="모카").click()
     expect(page.locator(".phone")).to_contain_text("신나게"); shot("12-parent-preview")
 
+    # 일과
+    page.goto(f"{BASE}/#/dashboard"); expect(page.locator(".routine.compact .rblock")).to_have_count(6); shot("14-dashboard-routine")
+    page.goto(f"{BASE}/#/routine")
+    page.locator(".rblock", has_text="점심·휴식").click(); expect(page.locator("#bt")).to_contain_text("점심·휴식"); shot("15-routine-lunch", True)
+    page.locator(".rblock", has_text="오후 산책·놀이").click(); expect(page.locator(".handoff")).to_be_visible(); shot("16-routine-handoff", True)
+
+    # 반려견 등록 + 사진 자르기 (가로 사진을 올려 원형 가이드 안에서 자른다)
+    from PIL import Image, ImageDraw
+    import tempfile
+    im = Image.new("RGB", (900, 600), (233, 224, 205)); d = ImageDraw.Draw(im)
+    d.ellipse((470, 130, 770, 430), fill=(190, 140, 100)); d.ellipse((540, 230, 580, 270), fill=(40, 40, 40)); d.ellipse((660, 230, 700, 270), fill=(40, 40, 40)); d.ellipse((590, 310, 650, 350), fill=(60, 40, 40))
+    path = os.path.join(tempfile.gettempdir(), "demo_dog.png"); im.save(path)
+    page.goto(f"{BASE}/#/dogs"); page.locator("#add-dog").click()
+    m = page.locator(".modal")
+    m.get_by_label("이름 *", exact=True).fill("초코"); m.get_by_label("견종 *").fill("닥스훈트"); m.get_by_label("생년월일 *").fill("2023-05-01"); m.get_by_label("보호자 이름 *").fill("강민지")
+    page.locator("#pp-file").set_input_files(path); expect(page.locator("#cv")).to_be_visible()
+    box = page.locator("#cv").bounding_box(); page.mouse.move(box["x"] + 150, box["y"] + 150); page.mouse.down(); page.mouse.move(box["x"] + 20, box["y"] + 150, steps=6); page.mouse.up()
+    shot("17-photo-cropper")
+    page.locator("#ok").click(); expect(page.locator("#pp-prev img")).to_have_count(1); shot("18-register-dog")
+    m.get_by_role("button", name="등록", exact=True).click(); expect(page.get_by_role("heading", name="초코")).to_be_visible(); shot("19-new-dog-profile")
+
     page.set_viewport_size({"width": 390, "height": 800})
     page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible(); shot("13-mobile-dashboard")
     b.close()

@@ -1,5 +1,5 @@
 import { api, ApiError } from './api.js';
-import { html, icon, fmtTime, fmtWhen, nowKstLocalInput } from './util.js';
+import { html, icon, fmtTime, fmtWhen, nowKstLocalInput, esc } from './util.js';
 import { empty, busy, guarded, toast, fieldErrors, showFieldError, skeleton, avatar } from './ui.js';
 import { openTaskModal } from './tasks.js';
 
@@ -12,8 +12,11 @@ const QUICK = {
 
 export async function recordNewView(ctx) {
   const { root, query, staff } = ctx;
-  const [dogs, members] = await Promise.all([api.dogs(), api.staff()]);
-  let type = '식사';
+  const [dogs, members, routine] = await Promise.all([api.dogs(), api.staff(), api.routine()]);
+  const blocks = routine.blocks;
+  const preset = blocks.find((b) => String(b.id) === query.block);
+  let type = preset && QUICK[preset.record_type] ? preset.record_type : '식사';
+  const blockAt = (local) => { const t = (local || '').slice(11, 16); return blocks.find((b) => b.start_time <= t && t < b.end_time); };
   root.innerHTML = html`<div class="page-head"><div><h1>돌봄 기록 작성</h1><p>선택형 입력으로 빠르게 남기고, 필요한 경우에만 메모를 덧붙입니다.</p></div></div>
     <div id="done"></div>
     <form class="form" id="f" novalidate>
@@ -22,6 +25,8 @@ export async function recordNewView(ctx) {
       <div class="field" data-field="structured_value" id="quick"></div>
       <div class="field"><label for="content">상세 메모</label><textarea class="input" id="content" name="content" maxlength="1000" placeholder="예: 점심을 평소보다 적게 먹었습니다. 오후 담당자는 …"></textarea>
         <p class="hint">다음 담당자가 해야 할 일이 있다면 문장에 적어 주세요. 기록을 저장해도 업무는 자동으로 만들어지지 않습니다.</p></div>
+      <div class="field"><label for="block">일과 구간</label><select class="input" id="block" name="block_id"></select>
+        <p class="hint">기록 시각에 맞춰 자동으로 정해지고, 필요하면 직접 바꿀 수 있어요.</p></div>
       <div class="row2"><div class="field"><label for="at">기록 시각</label><input class="input" type="datetime-local" id="at" name="observed_at" value="${nowKstLocalInput()}"></div>
         <div class="field"><label for="author">기록 작성자</label><select class="input" id="author" name="author_id">${members.map((m) => html`<option value="${m.id}" ${m.id === staff.id ? 'selected' : ''}>${m.role} · ${m.name}</option>`)}</select></div></div>
       <div><button class="btn" type="submit">기록 저장</button> <a class="btn ghost" href="#/dashboard">취소</a></div>
@@ -33,6 +38,17 @@ export async function recordNewView(ctx) {
       <p class="hint">직원이 관찰한 상태를 남기는 선택지입니다. 선택한 값만으로 건강 이상을 판단하지 않습니다.</p>`.toString() : '';
   };
   paintQuick();
+  const blockSel = f.querySelector('#block');
+  const paintBlocks = () => {
+    const auto = blockAt(f.observed_at.value);
+    const keep = blockSel.value;
+    blockSel.innerHTML = `<option value="">자동 — ${esc(auto ? auto.name : '해당 구간 없음(영업시간 외)')}</option>` +
+      blocks.map((b) => `<option value="${b.id}">${esc(b.name)} (${b.start_time}–${b.end_time})</option>`).join('');
+    blockSel.value = keep && blocks.some((b) => String(b.id) === keep) ? keep : '';
+  };
+  paintBlocks();
+  if (preset) blockSel.value = String(preset.id);
+  f.observed_at.addEventListener('input', paintBlocks);
   f.querySelectorAll('[name=record_type]').forEach((r) => r.addEventListener('change', () => { type = r.value; paintQuick(); }));
   f.addEventListener('submit', (e) => {
     e.preventDefault(); fieldErrors(f, { errors: [] });
@@ -45,11 +61,11 @@ export async function recordNewView(ctx) {
     if (bad) return;
     busy(f.querySelector('[type=submit]'), async () => {
       try {
-        const rec = await api.createRecord({ dog_id: +v.dog_id, record_type: v.record_type, structured_value: v.structured_value || null, content, observed_at: v.observed_at || null, author_id: +v.author_id });
+        const rec = await api.createRecord({ dog_id: +v.dog_id, record_type: v.record_type, structured_value: v.structured_value || null, content, observed_at: v.observed_at || null, author_id: +v.author_id, block_id: v.block_id ? +v.block_id : null });
         toast('돌봄 기록을 저장했습니다.');
         const dog = dogs.find((d) => d.id === rec.dog_id);
         root.querySelector('#done').innerHTML = html`<div class="card" style="max-width:680px;margin-bottom:18px" role="status"><h2>${dog.name}의 기록을 저장했습니다</h2>
-          <p class="muted" style="margin:6px 0 12px">${fmtTime(rec.observed_at)} · ${rec.record_type}${rec.structured_value ? ` · ${rec.structured_value}` : ''} — ${rec.content}</p>
+          <p class="muted" style="margin:6px 0 12px">${fmtTime(rec.observed_at)} · ${rec.block_name ? `${rec.block_name} · ` : ''}${rec.record_type}${rec.structured_value ? ` · ${rec.structured_value}` : ''} — ${rec.content}</p>
           <p class="small muted" style="margin-bottom:12px">저장만으로 후속 업무가 생기지는 않습니다. 필요하면 아래에서 후속 업무를 제안받을 수 있습니다.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="#/ai/${rec.id}">${icon('spark')} 후속 업무 제안 받기</a><a class="btn secondary" href="#/dogs/${dog.id}">${dog.name} 프로필 보기</a><button class="btn ghost" id="again">기록 더 작성</button></div></div>`.toString();
         root.querySelector('#again').addEventListener('click', () => { root.querySelector('#done').innerHTML = ''; f.content.value = ''; f.querySelectorAll('[name=structured_value]').forEach((x) => { x.checked = false; }); f.dog_id.focus(); });

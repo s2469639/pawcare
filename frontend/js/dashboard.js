@@ -1,7 +1,8 @@
-import { api } from './api.js';
 import { html, icon, FILTERS, matchFilter, groupKey, GROUP_LABEL } from './util.js';
 import { taskRow, empty } from './ui.js';
 import { bindTaskActions } from './tasks.js';
+import { api } from './api.js';
+import { routineStrip, programLine } from './routine.js';
 
 export async function dashboardView(ctx) {
   const { root, dash, staff, query } = ctx;
@@ -10,6 +11,7 @@ export async function dashboardView(ctx) {
   const list = dash.tasks.filter((t) => matchFilter(t, f));
   const order = ['pending', 'todo', 'in_progress', 'completed'];
   const groups = order.map((k) => [k, list.filter((t) => groupKey(t) === k)]).filter(([, l]) => l.length);
+  const routine = await api.routine();
   const nothingToCheck = c.needs_ack === 0 && c.todo === 0 && c.in_progress === 0;
 
   root.innerHTML = html`
@@ -21,6 +23,8 @@ export async function dashboardView(ctx) {
       <a class="stat" role="listitem" href="#/dashboard?filter=in_progress"><div class="label">${icon('half')} 조치 진행 중</div><div class="num">${c.in_progress}</div><div class="sub">건</div></a>
       <a class="stat" role="listitem" href="#/dashboard?filter=completed"><div class="label">${icon('check')} 완료된 업무</div><div class="num">${c.completed}</div><div class="sub">전체 ${c.total}건 중</div></a>
     </div>
+    <section class="section" aria-labelledby="rt"><div class="head"><h2 id="rt">오늘의 일과</h2><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${programLine(routine)}<a class="btn sm secondary" href="#/routine">구간별 기록 현황 ${icon('arrow')}</a></div></div>
+      ${routineStrip(routine, null, { compact: true })}</section>
     <div class="section"><div class="quick">
       <a class="btn" href="#/record/new">${icon('pen')} 돌봄 기록 작성</a>
       <a class="btn secondary" href="#/dogs">${icon('dog')} 반려견 목록</a>

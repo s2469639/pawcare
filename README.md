@@ -67,6 +67,27 @@
 
 보호자 화면은 미리보기일 뿐이며 실제로 전송되지 않습니다.
 
+### 7. 오늘의 일과와 인계 시점
+| 대시보드의 일과 구간 | 구간별 기록 현황 |
+|---|---|
+| ![대시보드 일과](docs/screenshots/14-dashboard-routine.png) | ![점심·휴식 구간](docs/screenshots/15-routine-lunch.png) |
+
+유치원의 하루를 구간(등원 → 오전 교육 → 점심·휴식 → 오후 산책 → 그루밍 → 하원)으로 나누고, 기록과 업무를 그 구간에 붙입니다.
+- 기록 시각에 맞춰 구간이 자동으로 정해지고(직접 바꿀 수 있음), 구간에서 바로 기록을 작성할 수 있습니다.
+- **이 구간에 아직 기록이 없는 반려견**이 위에 올라와 빠뜨린 기록을 찾기 쉽습니다.
+- **인계 시점**(오전 → 오후 담당자)에서는 이어받을 일(확인 대기 / 조치 필요 / 진행 중)과 그 업무 목록을 한 화면에서 처리합니다.
+
+![인계 시점](docs/screenshots/16-routine-handoff.png)
+
+구간 이름과 프로그램은 일반적인 예시 템플릿이며 편집 기능은 아직 없습니다. 영업시간 밖에는 오늘 가장 최근에 기록이 있는 구간을 보여줍니다.
+
+### 8. 새 반려견 등록과 프로필 사진
+| 원형 가이드로 사진 자르기 | 등록 폼 | 등록된 프로필 |
+|---|---|---|
+| ![사진 자르기](docs/screenshots/17-photo-cropper.png) | ![등록 폼](docs/screenshots/18-register-dog.png) | ![새 프로필](docs/screenshots/19-new-dog-profile.png) |
+
+사진은 **어떤 비율이든 올릴 수 있고**, 브라우저에서 원형 가이드 안의 위치·확대를 맞춰 **512×512 정사각형**으로 잘라 보냅니다(드래그, 휠·슬라이더 확대, 키보드 이동 지원). 서버는 파일 형식(앞부분 시그니처까지)과 용량(1MB)을 검사하고, 올린 사진은 Git에 올라가지 않는 `uploads/`에 저장합니다.
+
 ## 실행 방법
 
 ```bash
@@ -110,16 +131,17 @@ uvicorn backend.main:app --reload      # http://localhost:8000
 ```
 backend/    FastAPI + SQLite
             database.py  schemas.py  deps.py  seed.py
-            routes/      dogs · records · tasks · ai · misc
+            routes/      dogs · records · tasks · ai · routine · misc
             services/    ai_service.py (데모 분석 + Gemini + 출력 검증)
             list_models.py  내 키로 쓸 수 있는 Gemini 모델 목록 출력
 frontend/   Vanilla JS(ES modules) SPA, 직접 작성한 CSS (Ivory · Sage · Forest Ink · Clay)
             assets/dogs/  샘플 반려견 프로필 사진(더미). 사진이 없거나 불러오지 못하면 이니셜 아바타로 대체
+            js/cropper.js  사진 선택·원형 가이드 크롭(라이브러리 없음)
 tests/      pytest(API) · e2e_scenario.py(브라우저) · capture_screenshots.py
 docs/       시연 화면 캡처
 ```
 
-**데이터 모델:** `organizations`, `staff`, `dogs`, `care_records`(보호자 공개 상태 포함), `tasks`(`source_record_id`로 원본 기록 연결), `task_action_logs`.
+**데이터 모델:** `organizations`, `staff`, `dogs`(사진 경로 포함), `routine_blocks`(일과 구간), `care_records`(보호자 공개 상태·구간 포함), `tasks`(`source_record_id`로 원본 기록 연결), `task_action_logs`. 기존 DB는 시작할 때 자동으로 마이그레이션됩니다.
 모든 데이터는 `org_id`(유치원)로 분리되어, 다른 유치원 직원은 접근할 수 없습니다.
 
 **주요 API**
@@ -127,7 +149,9 @@ docs/       시연 화면 캡처
 | | |
 |---|---|
 | `GET /api/dashboard` | 요약 숫자와 정렬된 업무 목록 |
-| `GET /api/dogs` · `GET/PATCH /api/dogs/{id}` | 목록(검색·상태 필터), 상세·프로필 수정 |
+| `GET/POST /api/dogs` · `GET/PATCH /api/dogs/{id}` | 목록(검색·상태 필터)·등록, 상세·프로필 수정 |
+| `POST/DELETE /api/dogs/{id}/photo` | 프로필 사진 업로드(JPG·PNG·WebP, 1MB 이하)·삭제 |
+| `GET /api/routine` · `GET /api/routine/{id}` | 일과 구간과 기록 현황, 구간 상세·인계 요약 |
 | `GET/POST /api/records` | 기록 조회·생성 |
 | `PATCH /api/records/{id}/parent-approval` | 보호자 공개 승인/취소 |
 | `GET/POST /api/tasks` · `GET/PATCH /api/tasks/{id}` | 업무 조회·생성·담당자/내용 변경 |
@@ -139,13 +163,13 @@ docs/       시연 화면 캡처
 ## 테스트
 
 ```bash
-python -m pytest -q                     # API·규칙 15개
+python -m pytest -q                     # API·규칙·업로드 보안·일과·마이그레이션 26개
 pip install playwright                  # e2e 및 캡처에 필요
 python tests/e2e_scenario.py            # 서버 실행 후. 실제 브라우저로 전체 시나리오 검증
 python tests/capture_screenshots.py     # docs/screenshots 재생성
 ```
 
-e2e는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수정/승인, 담당자 전환, 확인·조치 분리, 새로고침 후 데이터 유지, 입력 오류, 없는 ID 처리, 보호자 미리보기, 유치원 간 격리, 390px 가로 스크롤 없음, 콘솔 오류 없음을 확인합니다.
+e2e(19개 항목)는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수정/승인, 담당자 전환, 확인·조치 분리, 새로고침 후 데이터 유지, 입력 오류, 없는 ID 처리, 보호자 미리보기, 반려견 등록과 사진 크롭(드래그한 위치가 결과물 픽셀에 반영되는지까지), 일과 구간, 유치원 간 격리, 390px 가로 스크롤 없음, 콘솔 오류 없음을 확인합니다.
 
 ## 한계
 
@@ -153,5 +177,6 @@ e2e는 샘플 데이터를 초기화한 뒤 기록 저장, AI 제안 무시/수�
 - **Gemini 실제 호출은 검증하지 못했습니다.** 개발 환경에 키가 없어, 출력 검증 로직과 실패 시 데모 분석으로의 대체 동작만 테스트했습니다.
 - 푸시/카카오 알림, 예약·결제, 음성, CCTV, 의료 연동, 실시간 다중 사용자 동기화는 범위 밖입니다. 상단 알림 아이콘은 내게 배정된 확인 대기 업무 수를 보여줄 뿐 실제 푸시가 아닙니다.
 - 보호자 화면은 승인된 기록 미리보기까지입니다. 시각은 한국 표준시(KST) 기준입니다.
-- 반려견 프로필 사진은 시연용 더미 이미지입니다. 실제 반려견 사진이 아니며, 사진 업로드 기능은 아직 없습니다(`dogs.photo`에 경로를 저장하는 구조만 준비).
+- 샘플 반려견 사진은 시연용 더미 이미지입니다. 직접 올린 사진은 서버 디스크(`uploads/`)에 저장되며, 파일명이 무작위일 뿐 **로그인 없이 주소를 알면 열 수 있습니다.** 실제 서비스에서는 인증과 객체 저장소가 필요합니다. 영상 업로드는 아직 없습니다.
+- 일과 구간은 예시 템플릿 하나이며 편집·요일별 설정은 없습니다. 반려견 삭제 기능도 아직 없습니다.
 - 샘플 데이터의 "알레르기·민감성" 등은 시연용 가상 정보이며 실제 건강 정보가 아닙니다.

@@ -6,13 +6,13 @@ export class ApiError extends Error {
   fieldError(name) { return this.errors.find((e) => e.field === name)?.message; }
 }
 
-async function request(method, path, body) {
-  const headers = { 'Content-Type': 'application/json' };
+async function request(method, path, body, raw) {
+  const headers = raw ? { 'Content-Type': raw.type } : { 'Content-Type': 'application/json' };
   const sid = session.get().staffId;
   if (sid) headers['X-Staff-Id'] = String(sid);
   let res;
   try {
-    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(path, { method, headers, body: raw ? raw : body === undefined ? undefined : JSON.stringify(body) });
   } catch {
     throw new ApiError('서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해 주세요.');
   }
@@ -32,6 +32,11 @@ export const api = {
   dogs: (params = {}) => request('GET', `/api/dogs${q(params)}`),
   dog: (id) => request('GET', `/api/dogs/${id}`),
   patchDog: (id, b) => request('PATCH', `/api/dogs/${id}`, b),
+  createDog: (b) => request('POST', '/api/dogs', b),
+  uploadPhoto: (id, blob) => request('POST', `/api/dogs/${id}/photo`, undefined, blob),
+  deletePhoto: (id) => request('DELETE', `/api/dogs/${id}/photo`),
+  routine: () => request('GET', '/api/routine'),
+  routineBlock: (id) => request('GET', `/api/routine/${id}`),
   records: (params = {}) => request('GET', `/api/records${q(params)}`),
   record: (id) => request('GET', `/api/records/${id}`),
   createRecord: (b) => request('POST', '/api/records', b),

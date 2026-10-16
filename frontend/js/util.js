@@ -64,3 +64,10 @@ export function groupKey(t) {
 }
 export const GROUP_LABEL = { pending: '확인 대기 · 아직 확인하지 않은 업무', todo: '조치 필요 · 확인했지만 아직 조치하지 않은 업무', in_progress: '진행 중', completed: '완료' };
 export const canAct = (staff, t) => t.assignee_id == null || t.assignee_id === staff.id || staff.role === '관리자';
+
+/** 받침 유무에 따라 조사를 붙인다. josa('초코', '을', '를') → '초코를', josa('보리', '이', '가') → '보리가' */
+export function josa(word, withFinal, noFinal) {
+  const c = String(word).trim().slice(-1).charCodeAt(0);
+  const hasFinal = c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0;
+  return `${word}${hasFinal ? withFinal : noFinal}`;
+}

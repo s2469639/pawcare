@@ -4,7 +4,9 @@
 """
 import glob
 import os
+import re
 import sys
+import urllib.error
 import urllib.request
 
 from playwright.sync_api import expect, sync_playwright
@@ -185,6 +187,95 @@ with sync_playwright() as p:
     expect(page.locator(".phone")).not_to_contain_text("오후 담당자")
     shot("12-parent")
     step("보호자 미리보기는 승인된 문구만 표시")
+
+    # 10-b. 반려견 등록 + 사진 자르기(크롭)
+    from PIL import Image
+    import io, tempfile
+    img_path = os.path.join(tempfile.gettempdir(), "wide_test.png")
+    im = Image.new("RGB", (900, 600), (30, 80, 220))             # 가로 사진: 왼쪽 절반 빨강, 오른쪽 절반 파랑
+    im.paste((220, 30, 30), (0, 0, 450, 600)); im.save(img_path)
+    page.goto(f"{BASE}/#/dogs")
+    expect(page.locator(".dog-card")).to_have_count(5)
+    page.locator("#add-dog").click()
+    modal = page.locator(".modal")
+    modal.get_by_role("button", name="등록", exact=True).click()                       # 빈 폼
+    for msg in ("이름을 입력해 주세요.", "견종을 입력해 주세요.", "생년월일을 입력해 주세요.", "보호자 이름을 입력해 주세요."):
+        expect(modal.get_by_text(msg, exact=True)).to_be_visible()
+    shot("11b-register-errors")
+    modal.get_by_label("이름 *", exact=True).fill("초코"); modal.get_by_label("견종 *").fill("닥스훈트")
+    modal.get_by_label("생년월일 *").fill("2023-05-01"); modal.get_by_label("보호자 이름 *").fill("강민지")
+    # 크롭 취소: ESC는 크롭 창만 닫고 등록 창은 유지
+    page.locator("#pp-file").set_input_files(img_path)
+    expect(page.locator("#cv")).to_be_visible(); page.keyboard.press("Escape")
+    expect(page.locator("#cv")).to_have_count(0); expect(modal.get_by_label("이름 *", exact=True)).to_have_value("초코")
+    expect(page.locator("#pp-prev img")).to_have_count(0)
+    # 다시 선택 → 왼쪽으로 크게 끌어 오른쪽 끝을 가운데 정사각형에 맞춘다
+    page.locator("#pp-file").set_input_files(img_path)
+    cv = page.locator("#cv"); box = cv.bounding_box()
+    page.mouse.move(box["x"] + 150, box["y"] + 150); page.mouse.down(); page.mouse.move(box["x"] - 50, box["y"] + 150, steps=8); page.mouse.up()
+    shot("11c-cropper")
+    page.locator("#ok").click()
+    expect(page.locator("#cv")).to_have_count(0); expect(page.locator("#pp-prev img")).to_have_count(1)
+    modal.get_by_role("button", name="등록", exact=True).click()
+    expect(page.get_by_role("heading", name="초코")).to_be_visible()
+    src = page.locator(".dog-head .avatar img").get_attribute("src")
+    assert src.startswith("uploads/dogs/"), src
+    out = Image.open(io.BytesIO(urllib.request.urlopen(f"{BASE}/{src}").read())).convert("RGB")
+    assert out.size == (512, 512), out.size                                     # 항상 정사각형
+    left, center = out.getpixel((60, 256)), out.getpixel((300, 256))
+    assert left[0] > 150 and left[2] < 100, f"왼쪽은 빨강이어야 함 {left}"          # 끌어서 이동한 결과가 반영됨
+    assert center[2] > 150 and center[0] < 100, f"가운데는 파랑이어야 함 {center}"
+    shot("11d-new-dog")
+    step("반려견 등록: 필수 오류 표시, 크롭 취소(ESC)는 등록 창 유지, 드래그한 위치대로 512×512 정사각형 저장")
+
+    page.goto(f"{BASE}/#/dogs"); page.locator("#add-dog").click()                  # 같은 이름+보호자 중복
+    modal = page.locator(".modal")
+    modal.get_by_label("이름 *", exact=True).fill("초코"); modal.get_by_label("견종 *").fill("닥스훈트")
+    modal.get_by_label("생년월일 *").fill("2023-05-01"); modal.get_by_label("보호자 이름 *").fill("강민지")
+    modal.get_by_role("button", name="등록", exact=True).click()
+    expect(page.get_by_text("이미 등록된 반려견입니다.")).to_be_visible()
+    modal.get_by_role("button", name="취소").click()
+    expect(page.locator(".dog-card")).to_have_count(6)
+    page.locator(".dog-card", has_text="초코").click()
+    page.get_by_role("button", name="프로필 수정").click()                           # 사진 삭제 → 이니셜 아바타
+    page.locator("#pp-remove").click()
+    page.locator(".modal").get_by_role("button", name="저장").click()
+    expect(page.locator(".dog-head .avatar img")).to_have_count(0)
+    assert urllib.request.urlopen(urllib.request.Request(f"{BASE}/{src}")) if False else True
+    try:
+        urllib.request.urlopen(f"{BASE}/{src}"); raise AssertionError("삭제한 사진이 아직 제공됨")
+    except urllib.error.HTTPError as e:
+        assert e.code == 404
+    errors[:] = [e for e in errors if "409" not in e and "404" not in e]   # 중복 등록(409)·삭제한 사진 조회(404)는 일부러 일으킨 응답
+    step("중복 등록 거부, 프로필 수정에서 사진 삭제 시 파일도 제거")
+
+    # 10-c. 일과
+    page.goto(f"{BASE}/#/dashboard")
+    expect(page.get_by_role("heading", name="오늘의 일과")).to_be_visible()
+    expect(page.locator(".routine.compact .rblock")).to_have_count(6)
+    expect(page.locator(".program")).to_contain_text("오늘의 프로그램")
+    page.locator(".nav").get_by_role("link", name="오늘의 일과").click()
+    expect(page.get_by_role("heading", name="오늘의 일과", level=1)).to_be_visible()
+    page.locator(".rblock", has_text="점심·휴식").click()
+    expect(page.locator("#bt")).to_contain_text("점심·휴식")
+    expect(page.get_by_text("이 구간에 기록이 있는 반려견")).to_contain_text("2/6")      # 보리·밤이 / 새로 등록한 초코 포함 6마리
+    rows = page.locator(".timeline li")
+    expect(rows.first).to_contain_text("아직 기록 없음")                                  # 기록 없는 아이가 위
+    shot("14-routine-lunch")
+    page.locator(".rblock", has_text="오후 산책·놀이").click()
+    expect(page.locator(".handoff")).to_contain_text("오전 → 오후 담당자")
+    expect(page.locator(".handoff")).to_contain_text("확인 대기 0건")             # 앞 단계에서 #1을 확인 처리함
+    expect(page.locator(".handoff")).to_contain_text("확인했지만 조치 필요 2건 · 진행 중 1건")
+    expect(page.locator(".handoff .task-row").first).to_be_visible()
+    shot("15-routine-handoff")
+    # 구간에서 바로 기록 작성: 구간·반려견이 미리 선택됨 → 저장 후 구간 현황에 반영
+    page.locator(".timeline li", has_text="두부").get_by_role("link", name="기록 작성").click()
+    expect(page.locator("#block")).to_have_value(re.compile(r"\d+")); expect(page.locator("#dog")).to_have_value("2")
+    page.locator("#f").get_by_text("활발함", exact=True).click(); page.get_by_role("button", name="기록 저장").click()
+    expect(page.locator("#done")).to_contain_text("두부의 기록을 저장했습니다"); expect(page.locator("#done")).to_contain_text("오후 산책·놀이")
+    page.goto(f"{BASE}/#/dogs/2")
+    expect(page.locator(".timeline")).to_contain_text("오후 산책·놀이")
+    step("일과: 대시보드 구간 표시, 구간별 기록 현황·기록 없는 아이, 인계 시점 요약, 구간에서 바로 기록 작성")
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")

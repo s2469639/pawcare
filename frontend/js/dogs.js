@@ -1,7 +1,8 @@
 import { api, ApiError } from './api.js';
-import { html, icon, fmtTime, fmtWhen } from './util.js';
+import { html, icon, fmtTime, fmtWhen, josa } from './util.js';
 import { avatar, taskRow, empty, ackBadge, actionBadge, busy, guarded, toast, openModal, fieldErrors, showFieldError } from './ui.js';
 import { bindTaskActions } from './tasks.js';
+import { photoField, bindPhotoField } from './cropper.js';
 
 const CTX_LABELS = [['meal', '식사 관련 주의사항'], ['sensitivity', '알레르기·민감성 정보'], ['behavior', '행동 관련 주의사항'], ['owner_request', '보호자 요청사항'], ['other', '기타 돌봄 참고사항']];
 const STATUS = [['all', '전체'], ['needs_check', '확인 필요'], ['has_task', '진행할 업무 있음'], ['clear', '열린 업무 없음']];
@@ -16,11 +17,12 @@ const dogCard = (d) => html`<a class="dog-card ${d.needs_check_count ? 'needs' :
 export async function dogsView(ctx) {
   const { root } = ctx;
   let q = '', status = 'all';
-  root.innerHTML = html`<div class="page-head"><div><h1>반려견</h1><p>오늘 돌봄 중인 반려견을 찾고 프로필로 이동합니다.</p></div></div>
+  root.innerHTML = html`<div class="page-head"><div><h1>반려견</h1><p>오늘 돌봄 중인 반려견을 찾고 프로필로 이동합니다.</p></div><button class="btn" id="add-dog">${icon('plus')} 반려견 등록</button></div>
     <div class="toolbar"><label class="sr" for="q">이름 검색</label><input id="q" class="input search" type="search" placeholder="이름으로 검색" autocomplete="off">
     <div class="chips" role="group" aria-label="상태 필터">${STATUS.map(([k, l]) => html`<button class="chip" data-s="${k}" aria-pressed="${k === 'all'}">${l}</button>`)}</div></div>
     <div id="grid" class="dog-grid" aria-live="polite"></div>`.toString();
   const grid = root.querySelector('#grid');
+  root.querySelector('#add-dog').addEventListener('click', () => registerDogModal(ctx));
   let seq = 0;
   const load = async () => {
     const my = ++seq;
@@ -58,7 +60,7 @@ export async function dogDetailView(ctx) {
 
     <section class="section"><div class="head"><h2>오늘의 돌봄 기록</h2><span class="small muted">${d.records_today.length}건</span></div>
       <div class="panel" style="padding:4px 18px">${d.records_today.length ? html`<ul class="timeline">${d.records_today.map((r) => html`<li><div class="t">${fmtTime(r.observed_at)}</div><div class="body">
-        <div><span class="badge b-done">${r.record_type}</span> ${r.structured_value && r.structured_value !== '직접 입력' ? html`<b>${r.structured_value}</b>` : ''} <span class="small muted">· ${r.author_name} (${r.author_role})</span></div>
+        <div><span class="badge b-done">${r.record_type}</span>${r.block_name ? html` <span class="badge b-ack">${r.block_name}</span>` : ''} ${r.structured_value && r.structured_value !== '직접 입력' ? html`<b>${r.structured_value}</b>` : ''} <span class="small muted">· ${r.author_name} (${r.author_role})</span></div>
         <p style="margin-top:4px">${r.content}</p>
         <div class="tags">${r.tasks.map((t) => html`<a class="link-task" href="#/tasks/${t.id}">${icon('list')} ${t.title} · ${t.acknowledgment_status === 'pending' ? '확인 대기' : '확인 완료'} / ${{ todo: '조치 필요', in_progress: '진행 중', completed: '조치 완료' }[t.action_status]}</a>`)}
           ${r.tasks.length ? '' : html`<a class="btn sm secondary" href="#/ai/${r.id}">${icon('spark')} 후속 업무 제안</a>`}
@@ -98,6 +100,7 @@ function profileModal(ctx, d) {
   openModal({
     title: `${d.name} 프로필 수정`,
     body: html`<form class="stack" novalidate>
+      ${photoField({ photo: d.photo, name: d.name })}
       <div class="row2"><div class="field"><label for="p-breed">견종 *</label><input class="input" id="p-breed" name="breed" value="${d.breed}" maxlength="40"></div>
         <div class="field"><label for="p-birth">생년월일 *</label><input class="input" id="p-birth" name="birth_date" type="date" value="${d.birth_date}"></div></div>
       <div class="field"><label for="p-owner">보호자 이름 *</label><input class="input" id="p-owner" name="owner_name" value="${d.owner_name}" maxlength="40"></div>
@@ -105,6 +108,7 @@ function profileModal(ctx, d) {
       <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn" type="submit">저장</button></div></form>`.toString(),
     onMount(el, close) {
       const f = el.querySelector('form');
+      const photo = bindPhotoField(f);
       f.addEventListener('submit', (e) => {
         e.preventDefault(); fieldErrors(f, { errors: [] });
         const v = Object.fromEntries(new FormData(f));
@@ -113,8 +117,54 @@ function profileModal(ctx, d) {
         if (bad) return;
         const care_context = Object.fromEntries(CTX_LABELS.map(([k]) => [k, v[`ctx_${k}`]]));
         busy(f.querySelector('[type=submit]'), async () => {
-          try { await api.patchDog(d.id, { breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context }); close(); toast('프로필을 저장했습니다.'); ctx.rerender(); }
-          catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); }
+          try {
+            await api.patchDog(d.id, { breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context });
+            if (photo.blob) await api.uploadPhoto(d.id, photo.blob); else if (photo.remove) await api.deletePhoto(d.id);
+            close(); toast('프로필을 저장했습니다.'); ctx.rerender();
+          } catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); }
+        });
+      });
+    },
+  });
+}
+
+/** 새 반려견 등록 (사진은 선택) */
+function registerDogModal(ctx) {
+  openModal({
+    title: '새 반려견 등록',
+    body: html`<form class="stack" novalidate>
+      ${photoField({ photo: null, name: '?' })}
+      <div class="row2"><div class="field"><label for="r-name">이름 *</label><input class="input" id="r-name" name="name" maxlength="20" autocomplete="off"></div>
+        <div class="field"><label for="r-breed">견종 *</label><input class="input" id="r-breed" name="breed" maxlength="40" placeholder="예: 푸들, 믹스견"></div></div>
+      <div class="row2"><div class="field"><label for="r-birth">생년월일 *</label><input class="input" id="r-birth" name="birth_date" type="date"><p class="hint">정확한 날짜를 모르면 대략적인 날짜를 입력하세요.</p></div>
+        <div class="field"><label for="r-owner">보호자 이름 *</label><input class="input" id="r-owner" name="owner_name" maxlength="40"></div></div>
+      <details class="field"><summary class="small">돌봄 참고사항 입력 (선택)</summary><div class="stack" style="margin-top:10px">
+        <p class="callout">직원이 직접 확인한 내용만 입력하세요. AI가 추정해서 채우지 않습니다.</p>
+        ${CTX_LABELS.map(([k, l]) => html`<div class="field"><label for="rc-${k}">${l}</label><textarea class="input" style="min-height:56px" id="rc-${k}" name="ctx_${k}" maxlength="300"></textarea></div>`)}</div></details>
+      <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn" type="submit">등록</button></div></form>`.toString(),
+    onMount(el, close) {
+      const f = el.querySelector('form');
+      const photo = bindPhotoField(f);
+      const prevEl = f.querySelector('#pp-prev');
+      f.name.addEventListener('input', () => { prevEl.dataset.initial = f.name.value.trim().slice(0, 1) || '?'; if (!prevEl.querySelector('img')) prevEl.firstChild.textContent = prevEl.dataset.initial; });
+      f.addEventListener('submit', (e) => {
+        e.preventDefault(); fieldErrors(f, { errors: [] });
+        const v = Object.fromEntries(new FormData(f));
+        let bad = false;
+        for (const [k, m] of [['name', '이름을 입력해 주세요.'], ['breed', '견종을 입력해 주세요.'], ['birth_date', '생년월일을 입력해 주세요.'], ['owner_name', '보호자 이름을 입력해 주세요.']]) if (!(v[k] || '').trim()) { showFieldError(f, k, m); bad = true; }
+        if (bad) { f.querySelector('.err')?.focus(); return; }
+        const care_context = Object.fromEntries(CTX_LABELS.map(([k]) => [k, v[`ctx_${k}`] || '']));
+        busy(f.querySelector('[type=submit]'), async () => {
+          let dog;
+          try {
+            dog = await api.createDog({ name: v.name.trim(), breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context });
+          } catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); return; }
+          let photoFailed = false;
+          if (photo.blob) { try { await api.uploadPhoto(dog.id, photo.blob); } catch { photoFailed = true; } }
+          close();
+          if (photoFailed) toast(`${josa(dog.name, '을', '를')} 등록했지만 사진을 올리지 못했습니다. 프로필 수정에서 다시 올려 주세요.`, 'error');
+          else toast(`${josa(dog.name, '을', '를')} 등록했습니다.`);
+          ctx.go(`/dogs/${dog.id}`);
         });
       });
     },
