@@ -116,7 +116,7 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/routine"); page.locator(".rblock", has_text="점심·휴식").click()
     expect(page.locator(".share-card")).to_be_visible(); page.wait_for_timeout(500); shot("30-routine-share", True)
 
-    # 퇴원 처리(관리자) → 삭제 예정 안내 → 재입원
+    # 퇴원 처리(관리자) → 삭제 예정 안내 → 재등록
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
     page.goto(f"{BASE}/#/dogs/3"); expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()
     page.get_by_role("button", name="퇴원 처리").click(); page.locator(".modal input[name=ok]").check(); shot("32-discharge-modal")
@@ -127,7 +127,7 @@ with sync_playwright() as p:
     page.locator("#who").select_option(label="보호자 · 이수아 (모카)")
     expect(page.locator("#pw")).to_contain_text("퇴원했어요"); page.wait_for_timeout(600); shot("35-parent-discharged")
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
-    page.goto(f"{BASE}/#/dogs/3"); page.once("dialog", lambda d: d.accept()); page.get_by_role("button", name="재입원 처리").click()
+    page.goto(f"{BASE}/#/dogs/3"); page.once("dialog", lambda d: d.accept()); page.get_by_role("button", name="재등록 처리").click()
     expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()
     page.locator("#who").select_option(label="오후 담당자 · 서민재"); page.wait_for_timeout(900)
 

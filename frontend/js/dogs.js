@@ -57,7 +57,7 @@ export async function dogDetailView(ctx) {
         <p style="margin-top:6px">${open.length ? html`<span class="badge b-todo">진행할 업무 ${open.length}건</span>` : html`<span class="badge b-done">열린 업무 없음</span>`} ${d.consent_at ? '' : html`<span class="badge b-pending">${icon('lock')} 동의 미확인 · 공개 불가</span>`}</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${d.attending ? html`<a class="btn" href="#/record/new?dog=${d.id}">${icon('pen')} 돌봄 기록 작성</a>` : html`<button class="btn" disabled title="퇴원 처리된 반려견에는 새 기록을 남길 수 없습니다">${icon('pen')} 돌봄 기록 작성</button>`}
         <button class="btn secondary" id="goto-tasks">후속 업무 확인 (${open.length})</button><button class="btn secondary" id="edit">프로필 수정</button>
-        ${staff.role === '관리자' ? (d.attending ? html`<button class="btn ghost" id="discharge">퇴원 처리</button>` : (d.discharged && !d.purged_at ? html`<button class="btn ghost" id="readmit">재입원 처리</button>` : '')) : ''}</div></div></div>
+        ${staff.role === '관리자' ? (d.attending ? html`<button class="btn ghost" id="discharge">퇴원 처리</button>` : (d.discharged && !d.purged_at ? html`<button class="btn ghost" id="readmit">재등록 처리</button>` : '')) : ''}</div></div></div>
     ${d.purged_at ? html`<p class="callout clay" style="margin-top:12px" role="status"><b>자료 삭제 완료</b> · ${fmtWhen(d.purged_at)}에 사진·영상 파일과 보호자 연결을 삭제했습니다. 글 기록과 업무 이력은 남아 있습니다.</p>`
       : d.discharged ? html`<p class="callout clay" style="margin-top:12px" role="status"><b>퇴원 처리됨</b> (${fmtWhen(d.discharged_at)}) · 사진·영상 파일과 보호자 연결은 <b>${d.purge_after.slice(0, 10)}</b>(D-${d.purge_days_left})에 삭제될 예정입니다. 그때까지 보호자는 이미 공개된 사진을 볼 수 있어요.</p>` : ''}
 
@@ -97,8 +97,8 @@ export async function dogDetailView(ctx) {
   root.querySelector('#edit').addEventListener('click', () => profileModal(ctx, d));
   root.querySelector('#discharge')?.addEventListener('click', () => dischargeModal(ctx, d, open.length));
   root.querySelector('#readmit')?.addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
-    if (!confirm(`${josa(d.name, '을', '를')} 재입원 처리할까요? 삭제 예정이 취소되고 다시 기록·사진을 남길 수 있습니다.`)) return;
-    await api.readmit(d.id); toast(`${josa(d.name, '을', '를')} 재입원 처리했습니다.`); ctx.rerender();
+    if (!confirm(`${josa(d.name, '을', '를')} 재등록 처리할까요? 삭제 예정이 취소되고 다시 기록·사진을 남길 수 있습니다.`)) return;
+    await api.readmit(d.id); toast(`${josa(d.name, '을', '를')} 재등록 처리했습니다.`); ctx.rerender();
   })));
   root.querySelector('#consent')?.addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
     if (!confirm('보호자에게 사진 공유와 퇴원 후 3개월 뒤 삭제에 대한 동의를 받았나요? 확인하면 동의 확인 시각이 기록됩니다.')) return;
@@ -300,7 +300,7 @@ function dischargeModal(ctx, d, openTasks) {
         <li>새 돌봄 기록·사진·업무를 만들 수 없고, 새로 보호자에게 공개할 수도 없습니다.</li>
         <li>이미 공개된 사진은 보호자가 <b>삭제 예정일까지</b> 계속 볼 수 있습니다.</li>
         <li><b>퇴원 3개월 뒤</b> 이 아이의 사진·영상 파일과 보호자 연결이 삭제됩니다. 글 기록과 업무 이력은 남습니다.</li>
-        <li>삭제 전에는 "재입원 처리"로 되돌릴 수 있고, 삭제된 뒤에는 되돌릴 수 없습니다.</li>
+        <li>삭제 전에는 "재등록 처리"로 되돌릴 수 있고, 삭제된 뒤에는 되돌릴 수 없습니다.</li>
         ${openTasks ? html`<li>아직 끝나지 않은 업무가 <b>${openTasks}건</b> 있습니다. 필요하면 먼저 처리해 주세요.</li>` : ''}</ul>
       <label class="check consent-check"><input type="checkbox" name="ok"> 위 내용을 확인했고, 보호자에게 사전에 동의를 받았음을 확인합니다.</label>
       <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn clay" type="submit">퇴원 처리</button></div></form>`.toString(),

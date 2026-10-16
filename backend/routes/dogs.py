@@ -192,11 +192,11 @@ def discharge_dog(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connect
 
 @router.post("/{dog_id}/readmit")
 def readmit_dog(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
-    """재입원 처리(관리자). 자료가 삭제되기 전에만 가능하다."""
+    """재등록 처리(관리자). 자료가 삭제되기 전에만 가능하다."""
     require_admin(staff)
     dog = get_dog_or_404(db, dog_id, staff["org_id"])
     if dog["purged_at"]:
-        raise HTTPException(409, "자료가 이미 삭제되어 재입원 처리로 되돌릴 수 없습니다. 새 반려견으로 등록해 주세요.")
+        raise HTTPException(409, "자료가 이미 삭제되어 재등록 처리로 되돌릴 수 없습니다. 새 반려견으로 등록해 주세요.")
     if not dog["discharged_at"]:
         raise HTTPException(409, "퇴원 처리된 반려견이 아닙니다.")
     db.execute("UPDATE dogs SET discharged_at=NULL, purge_after=NULL, attending=1 WHERE id=?", (dog_id,))

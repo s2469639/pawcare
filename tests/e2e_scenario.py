@@ -501,7 +501,7 @@ with sync_playwright() as p:
     expect(page.locator("#bt")).to_contain_text("오전 교육·놀이"); expect(page.locator(".share-card")).to_have_count(0)
     step("사진 공유 시점: 점심 구간에서 공개 전 사진이 있는 아이 확인 → 공개 승인 → 구간 현황(공개 N/M마리) 갱신, 다른 구간엔 현황 없음")
 
-    # 10-h. M6: 퇴원 처리(관리자) → 보호자 안내 → 재입원
+    # 10-h. M6: 퇴원 처리(관리자) → 보호자 안내 → 재등록
     page.goto(f"{BASE}/#/dogs/3"); expect(page.get_by_role("heading", name="모카", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="퇴원 처리")).to_have_count(0)                      # 관리자가 아니면 퇴원 처리 버튼이 없다
     pick("관리자 · 정하은")                                                                       # 직원끼리 전환하면 현재 화면에 머문다
@@ -528,11 +528,11 @@ with sync_playwright() as p:
     switch_to("관리자 · 정하은", "오늘의 업무")
     page.goto(f"{BASE}/#/dogs/3")
     page.once("dialog", lambda d: d.accept())
-    page.get_by_role("button", name="재입원 처리").click()
-    expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()                           # 재입원: 다시 정상
+    page.get_by_role("button", name="재등록 처리").click()
+    expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()                           # 재등록: 다시 정상
     expect(page.get_by_role("link", name="돌봄 기록 작성").first).to_be_visible()
     pick("오전 담당자 · 한지우")
-    step("퇴원 처리: 관리자만, 확인 체크 필수, 새 기록 차단·목록에서 숨김·삭제 예정 현황, 보호자 안내(공개된 내용은 유지), 재입원으로 복구")
+    step("퇴원 처리: 관리자만, 확인 체크 필수, 새 기록 차단·목록에서 숨김·삭제 예정 현황, 보호자 안내(공개된 내용은 유지), 재등록으로 복구")
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
