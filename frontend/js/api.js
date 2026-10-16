@@ -23,6 +23,7 @@ const q = (o) => { const p = new URLSearchParams(Object.entries(o).filter(([, v]
 
 export const api = {
   health: () => request('GET', '/api/health'),
+  findModels: () => request('POST', '/api/ai/find-models'),
   testAi: () => request('POST', '/api/ai/test'),
   config: () => request('GET', '/api/auth/config'),
   me: () => request('GET', '/api/auth/me'),

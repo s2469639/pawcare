@@ -538,6 +538,8 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/ai"); expect(page.get_by_role("heading", name="AI 연결 상태")).to_be_visible()
     page.get_by_role("button", name="연결 테스트").click()
     expect(page.locator("#ai-test-out")).to_contain_text("연결 안 됨"); expect(page.locator("#ai-test-out")).to_contain_text("GEMINI_API_KEY가 설정되지 않았습니다")
+    page.get_by_role("button", name="사용 가능한 모델 찾기").click()
+    expect(page.locator("#ai-test-out")).to_contain_text("GEMINI_API_KEY가 설정되지 않았습니다")
     shot("36-ai-connection-test")
     step("AI 연결 테스트: 키가 없으면 원인을 안내(데모 분석으로 동작)")
 

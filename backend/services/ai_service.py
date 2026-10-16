@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Optional
 
 import httpx
@@ -140,7 +141,9 @@ def _error_message(status: int, body, model: str) -> tuple[str, str]:
     if status in (401, 403):
         return "키가 거부되었습니다(권한 없음·사용 제한). Google AI Studio에서 키의 상태와 제한 설정을 확인해 주세요.", msg
     if status == 404:
-        return f"모델 '{model}'을(를) 찾을 수 없습니다. `python -m backend.list_models`로 내 키로 쓸 수 있는 이름을 확인해 .env의 GEMINI_MODEL에 넣어 주세요.", msg
+        return (f"모델 '{model}'을(를) 지금은 사용할 수 없습니다. 이름이 맞아도, 서비스가 종료·축소됐거나 이 키에서 지원하지 않는 모델이면 404가 나며 "
+                f"모델 목록에는 남아 있는 경우도 있습니다. `python -m backend.check_ai --find`로 지금 실제로 되는 모델을 찾거나, "
+                f".env에 GEMINI_MODEL=auto 라고 적어 자동으로 고르게 하세요."), msg
     if status == 429:
         return "무료 사용량 한도(분당·일일)를 넘었습니다. 잠시 뒤 다시 시도하거나 다른 모델로 바꿔 보세요.", msg
     if status >= 500:
@@ -185,17 +188,98 @@ def _extract_json(text: str) -> dict:
     return data
 
 
+
+# ---------------- 모델 자동 탐색 ----------------
+# 모델은 자주 종료·교체되고, 목록(ListModels)에 있어도 호출은 404일 수 있다. 그래서 '실제로 호출해 본 뒤' 쓸 모델을 고른다.
+_EXCLUDE = ("image", "tts", "live", "audio", "embedding", "vision", "robotics", "computer", "native", "imagen", "veo", "learnlm", "gemma", "aqa")
+_auto_cache: dict = {"model": None, "at": 0.0}
+AUTO_TTL = 3600
+
+
+def list_generate_models(key: str) -> list[str]:
+    names, token = [], None
+    while True:
+        params = {"pageSize": 100, **({"pageToken": token} if token else {})}
+        try:
+            r = httpx.get("https://generativelanguage.googleapis.com/v1beta/models", params=params, headers={"x-goog-api-key": key}, timeout=20)
+        except httpx.TimeoutException as e:
+            raise AIError("모델 목록 요청 시간이 초과되었습니다.", type(e).__name__) from e
+        except httpx.HTTPError as e:
+            raise AIError("Google에 연결하지 못했습니다. 인터넷 연결이나 방화벽을 확인해 주세요.", type(e).__name__) from e
+        try:
+            body = r.json()
+        except ValueError:
+            body = None
+        if r.status_code != 200:
+            user, detail = _error_message(r.status_code, body, "(목록)")
+            raise AIError(user, detail, r.status_code)
+        names += [m["name"].removeprefix("models/") for m in (body or {}).get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+        token = (body or {}).get("nextPageToken")
+        if not token:
+            return names
+
+
+def _rank(name: str):
+    """쓰기 좋은 순서: 정식 버전 → 높은 버전 → flash → flash-lite → pro → 그 외."""
+    m = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+    version = float(m.group(1)) if m else 0.0
+    tier = 0 if "flash" in name and "lite" not in name else 1 if "lite" in name else 2 if "pro" in name else 3
+    unstable = 1 if re.search(r"preview|exp", name) else 0
+    return (unstable, -version, tier, name)
+
+
+def find_working_models(key: str, want: int = 3, max_probe: int = 10) -> dict:
+    """내 키로 실제 호출이 되는 모델을 찾는다(아주 짧은 요청으로 확인). 한도 초과(429)는 '존재하지만 지금은 한도 초과'로 기록한다."""
+    listed = [n for n in list_generate_models(key) if n.startswith("gemini") and not any(x in n for x in _EXCLUDE)]
+    tried, working = [], []
+    for n in sorted(listed, key=_rank)[:max_probe]:
+        try:
+            _post(n, key, "연결 확인입니다. 'ok'라고만 답해 주세요.", json_mode=False)
+            tried.append({"model": n, "result": "ok", "note": "호출 성공"})
+            working.append(n)
+        except AIError as e:
+            note = {404: "사용 불가(종료되었거나 이 키에서 지원하지 않음)", 429: "존재하지만 지금은 사용량 한도 초과", 403: "권한 없음"}.get(e.status, e.user_message[:60])
+            tried.append({"model": n, "result": str(e.status or "error"), "note": note})
+        if len(working) >= want:
+            break
+    return {"listed": len(listed), "working": working, "tried": tried}
+
+
+def _resolve_model(key: str, configured: str, force: bool = False) -> str:
+    """GEMINI_MODEL=auto 이면 실제로 되는 모델을 골라 1시간 동안 기억한다. 아니면 입력값을 정리해서 그대로 쓴다."""
+    if configured.strip().lower() != "auto":
+        return _clean_model(configured)
+    now = time.time()
+    if not force and _auto_cache["model"] and now - _auto_cache["at"] < AUTO_TTL:
+        return _auto_cache["model"]
+    found = find_working_models(key, want=1)
+    if not found["working"]:
+        raise AIError("사용할 수 있는 Gemini 모델을 찾지 못했습니다. 키 상태와 사용량 한도를 확인해 주세요. "
+                      "(시도한 모델: " + ", ".join(f"{t['model']}[{t['note']}]" for t in found["tried"][:4]) + ")", "")
+    _auto_cache.update(model=found["working"][0], at=now)
+    return found["working"][0]
+
+
 def _gemini(record: dict, dog: dict, staff: list[dict], key: str, model: str) -> dict:
-    model = _clean_model(model)
+    configured = model
+    model = _resolve_model(key, configured)
     prompt = PROMPT.format(roles=", ".join(s["role"] for s in staff), dog=dog["name"],
                            rtype=record["record_type"], sv=record.get("structured_value") or "-",
                            content=record["content"])
+    def call(m: str) -> dict:
+        try:
+            return _post(m, key, prompt, json_mode=True)
+        except AIError as e:
+            # 일부 모델은 JSON 모드를 지원하지 않는다 → 같은 요청을 일반 모드로 한 번 더 시도(응답은 직접 JSON으로 해석)
+            if e.status == 400 and ("json mode" in e.detail.lower() or "mime" in e.detail.lower()):
+                return _post(m, key, prompt, json_mode=False)
+            raise
     try:
-        body = _post(model, key, prompt, json_mode=True)
+        body = call(model)
     except AIError as e:
-        # 일부 모델은 JSON 모드를 지원하지 않는다 → 같은 요청을 일반 모드로 한 번 더 시도(응답은 직접 JSON으로 해석)
-        if e.status == 400 and ("json mode" in e.detail.lower() or "mime" in e.detail.lower()):
-            body = _post(model, key, prompt, json_mode=False)
+        if e.status == 404 and configured.strip().lower() == "auto":      # 기억해 둔 모델이 그새 종료됐다면 다시 찾는다
+            model = _resolve_model(key, configured, force=True)
+            body = call(model)
         else:
             raise
     cands = body.get("candidates") or []
@@ -206,7 +290,9 @@ def _gemini(record: dict, dog: dict, staff: list[dict], key: str, model: str) ->
     text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
     if not text.strip():
         raise AIError(f"AI가 빈 응답을 보냈습니다 (종료 사유: {cands[0].get('finishReason', '알 수 없음')}).", "")
-    return sanitize_model_output(_extract_json(text), record, staff)
+    res = sanitize_model_output(_extract_json(text), record, staff)
+    res["_model"] = model
+    return res
 
 
 def _norm(s: str) -> str:
@@ -251,9 +337,9 @@ def suggest(record: dict, dog: dict, staff: list[dict]) -> dict:
     if key and model:
         try:
             res = _gemini(record, dog, staff, key, model)
-            rejected = res.pop("rejected", 0)
+            rejected, used = res.pop("rejected", 0), res.pop("_model", _clean_model(model))
             if res["suggestions"] or not rejected:
-                res["mode"], res["mode_label"] = "gemini", f"Gemini 분석 ({_clean_model(model)})"
+                res["mode"], res["mode_label"] = "gemini", f"Gemini 분석 ({used})"
                 return res
             # AI가 제안은 했지만 모두 검증(원문 근거·금지 표현)을 통과하지 못했다 → 안전한 규칙 기반 분석으로 대체
             fallback_note = "AI 제안이 원본 기록의 근거와 맞지 않아(또는 금지 표현 포함) 사용하지 않고 데모 분석(규칙 기반)으로 대체했습니다."
@@ -276,7 +362,7 @@ def suggest(record: dict, dog: dict, staff: list[dict]) -> dict:
 def check_connection() -> dict:
     """설정과 실제 연결 상태를 점검한다(작은 예시 기록으로 1회 호출 → 무료 한도를 아주 조금 사용)."""
     key, model = os.environ.get("GEMINI_API_KEY", "").strip(), os.environ.get("GEMINI_MODEL", "").strip()
-    out = {"key_set": bool(key), "model_set": bool(model), "model": _clean_model(model) if model else "", "ok": False, "message": ""}
+    out = {"key_set": bool(key), "model_set": bool(model), "model": ("auto" if model.lower() == "auto" else _clean_model(model)) if model else "", "ok": False, "message": ""}
     if not key:
         out["message"] = "GEMINI_API_KEY가 설정되지 않았습니다. 프로젝트 맨 위 폴더의 .env에 키를 넣고 서버를 껐다 켜 주세요. (데모 분석으로 동작 중)"
         return out
@@ -286,8 +372,8 @@ def check_connection() -> dict:
     sample = {"record_type": "배변", "structured_value": "평소와 다름", "content": "묽은 변이 관찰되었습니다. 오후 담당자는 다음 배변 상태를 확인해 주세요."}
     try:
         res = _gemini(sample, {"name": "연결 테스트"}, [{"id": 0, "name": "-", "role": "오후 담당자"}], key, model)
-        n = len(res["suggestions"])
-        out.update(ok=True, message=f"Gemini가 정상 응답했습니다. (예시 기록에서 제안 {n}건{'' if n else ', 검증을 통과한 제안은 없음'})")
+        n, used = len(res["suggestions"]), res.get("_model", "")
+        out.update(ok=True, model=used or out["model"], message=f"Gemini가 정상 응답했습니다. (사용 모델: {used}, 예시 기록에서 제안 {n}건{'' if n else ', 검증을 통과한 제안은 없음'})")
     except AIError as e:
         out["message"] = e.user_message
         _log.warning("Gemini 연결 테스트 실패: %s | %s", e.user_message, e.detail)

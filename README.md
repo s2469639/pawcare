@@ -231,6 +231,8 @@ uvicorn backend.main:app --reload      # http://localhost:8000
 5. 확인: `http://localhost:8000/api/health`가 `"ai_configured": true`이고, AI 제안 화면 라벨이 **"Gemini 분석 (모델명)"** 이면 성공입니다.
    "데모 분석" 라벨과 함께 안내문이 보이면 호출이 실패해 데모 분석으로 대체된 것입니다(키·모델명·네트워크 확인).
 
+**모델 이름은 `auto`가 편합니다.** `GEMINI_MODEL=auto`로 두면 서버가 실제로 호출이 되는 모델을 골라 쓰고(1시간 기억), 쓰던 모델이 종료되면 다시 찾습니다. 직접 정하고 싶다면 `python -m backend.check_ai --find`로 지금 되는 모델을 확인하세요(목록에 있어도 호출이 안 되는 모델이 있어서, 실제로 호출해 보고 알려줍니다). 화면에서는 **AI 업무 정리 → "사용 가능한 모델 찾기"** 버튼으로도 됩니다.
+
 **연결 확인:** `python -m backend.check_ai`를 실행하면 실제로 한 번 호출해 보고 원인을 알려줍니다(키 값은 출력하지 않음). 서버가 켜진 화면에서는 **AI 업무 정리 → "연결 테스트"** 버튼으로도 확인할 수 있습니다. 호출이 실패하면 제안 화면 상단에 **원인**이 함께 표시되고 데모 분석으로 대체됩니다.
 
 **안 될 때** (화면·터미널에 나오는 말 → 원인)
@@ -238,7 +240,7 @@ uvicorn backend.main:app --reload      # http://localhost:8000
 | 보이는 말 | 원인과 해결 |
 |---|---|
 | `API 키가 올바르지 않습니다` | 키를 다시 복사. `.env`에서 `GEMINI_API_KEY=키` 형태로 **따옴표·공백 없이**, 프로젝트 맨 위 폴더의 `.env`인지 확인 |
-| `모델 '…'을(를) 찾을 수 없습니다` | 모델 이름 오타·미지원. `python -m backend.list_models` 목록의 이름을 그대로 (`models/` 접두어는 있어도 됩니다) |
+| `모델 '…'을(를) 지금은 사용할 수 없습니다` (404) | **이름이 맞아도** 모델이 종료·축소되면 404가 나고, 목록(`list_models`)에는 남아 있어도 호출은 안 될 수 있습니다(예: `gemini-2.5-flash`는 2026-10-16 종료 예정으로 알려짐). **`python -m backend.check_ai --find`** 로 지금 실제로 되는 모델을 찾거나, `.env`에 **`GEMINI_MODEL=auto`** 로 적으세요 |
 | `무료 사용량 한도를 넘었습니다` | 분당/일일 한도. 잠시 뒤 재시도하거나 다른 모델로 변경 |
 | `키가 거부되었습니다` | 키의 제한 설정·권한 문제. Google AI Studio에서 키 상태 확인 |
 | `Google에 연결하지 못했습니다` / `시간이 초과` | 인터넷·방화벽·VPN 확인 |
@@ -294,7 +296,7 @@ docs/       시연 화면 캡처
 ## 테스트
 
 ```bash
-python -m pytest -q                     # API·규칙·업로드 보안·일과·인증·사진·공개 승인·알림장·사진 공유 시점·퇴원/삭제·Gemini 연동·마이그레이션 104개
+python -m pytest -q                     # API·규칙·업로드 보안·일과·인증·사진·공개 승인·알림장·사진 공유 시점·퇴원/삭제·Gemini 연동·모델 자동 탐색·마이그레이션 112개
 pip install playwright                  # e2e 및 캡처에 필요
 DEMO_MODE=1 python -m uvicorn backend.main:app &   # (Windows는 .env에 DEMO_MODE=1)
 python tests/e2e_scenario.py            # 시연 모드 서버에서 전체 시나리오 검증

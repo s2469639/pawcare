@@ -105,12 +105,22 @@ export async function aiView(ctx) {
   if (!params[0]) {
     const [recs, health] = await Promise.all([api.records({ unlinked: 'true' }), api.health()]);
     root.innerHTML = html`<div class="page-head"><div><h1>AI 업무 정리</h1><p>오늘의 기록 중 아직 후속 업무와 연결되지 않은 기록에서 확인할 일을 제안받습니다. 제안은 직원이 등록하기 전까지 업무가 아닙니다.</p></div></div>
-      <div class="card" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">AI 연결 상태</h3><button class="btn sm secondary" id="ai-test">연결 테스트</button></div>
+      <div class="card" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">AI 연결 상태</h3><button class="btn sm secondary" id="ai-test">연결 테스트</button><button class="btn sm secondary" id="ai-find">사용 가능한 모델 찾기</button></div>
         <p id="ai-test-out" class="small" role="status" style="margin-top:8px">${health.ai_configured ? '키와 모델이 설정되어 있습니다. 실제로 연결되는지는 "연결 테스트"로 확인할 수 있어요.' : '키 또는 모델이 설정되지 않아 지금은 데모 분석(규칙 기반)으로 동작합니다.'}</p></div>
       ${recs.length ? html`<div class="task-list">${recs.map((r) => html`<article class="task-row s-todo" style="grid-template-columns:120px 1fr auto"><a class="task-dog" href="#/dogs/${r.dog_id}">${r.dog_name}</a>
         <div><p class="task-title" style="font-weight:500">${r.content}</p><p class="task-meta">${fmtTime(r.observed_at)} · ${r.record_type}${r.structured_value ? ` · ${r.structured_value}` : ''} · ${r.author_name}</p></div>
         <a class="btn sm" href="#/ai/${r.id}">${icon('spark')} 분석하기</a></article>`)}</div>`
       : empty('정리할 기록이 없습니다', '후속 업무와 연결되지 않은 오늘의 기록이 없습니다.', html`<br><a class="btn" href="#/record/new">돌봄 기록 작성</a>`)}`.toString();
+    root.querySelector('#ai-find').addEventListener('click', (e) => busy(e.currentTarget, async () => {
+      const out = root.querySelector('#ai-test-out');
+      out.textContent = '실제로 호출이 되는 모델을 찾는 중… (몇 초 걸려요)';
+      try {
+        const r = await api.findModels();
+        if (!r.ok) { out.innerHTML = `<b>✘ ${esc(r.message)}</b>`; return; }
+        out.innerHTML = `<b>✔ 지금 쓸 수 있는 모델:</b> ${r.working.map((m) => `<code>${esc(m)}</code>`).join(', ')}<br>.env의 <code>GEMINI_MODEL=${esc(r.working[0])}</code> 로 적거나, 모델이 바뀌어도 알아서 고르게 <code>GEMINI_MODEL=auto</code> 로 적고 서버를 다시 켜세요.`
+          + `<ul class="small muted" style="margin:6px 0 0;padding-left:18px">${r.tried.map((t) => `<li>${esc(t.model)} — ${esc(t.note)}</li>`).join('')}</ul>`;
+      } catch (err) { out.textContent = err.message; }
+    }));
     root.querySelector('#ai-test').addEventListener('click', (e) => busy(e.currentTarget, async () => {
       const out = root.querySelector('#ai-test-out');
       out.textContent = '연결을 확인하는 중…';

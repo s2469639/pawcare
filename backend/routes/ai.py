@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,3 +30,16 @@ def suggest_tasks(body: SuggestRequest, staff=Depends(current_staff), db: sqlite
 def test_ai(staff=Depends(current_staff)):
     """AI 설정·연결 점검(직원 전용). 키 값은 응답에 포함하지 않는다."""
     return ai_service.check_connection()
+
+
+@router.post("/find-models")
+def find_models(staff=Depends(current_staff)):
+    """내 키로 실제 호출이 되는 모델을 찾는다(직원 전용, 짧은 요청 여러 번 → 무료 한도를 조금 사용)."""
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not key:
+        return {"ok": False, "message": "GEMINI_API_KEY가 설정되지 않았습니다.", "working": [], "tried": []}
+    try:
+        r = ai_service.find_working_models(key)
+    except ai_service.AIError as e:
+        return {"ok": False, "message": e.user_message, "working": [], "tried": []}
+    return {"ok": bool(r["working"]), "message": "" if r["working"] else "호출이 되는 모델을 찾지 못했습니다.", **r}

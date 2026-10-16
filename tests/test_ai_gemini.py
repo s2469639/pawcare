@@ -145,3 +145,103 @@ def test_connection_test_endpoint(client, gem, monkeypatch):
     gem(err(429, "quota"))
     r = client.post("/api/ai/test", headers=MORNING).json()
     assert r["ok"] is False and "한도" in r["message"]
+
+
+# ---------------- 모델 자동 탐색 (목록에는 있어도 호출은 404인 경우) ----------------
+@pytest.fixture(autouse=True)
+def _reset_auto_cache():
+    ai_service._auto_cache.update(model=None, at=0.0)
+    yield
+    ai_service._auto_cache.update(model=None, at=0.0)
+
+
+LISTED = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash-preview",
+          "gemini-3.5-flash-image", "gemma-3-27b-it", "gemini-embedding-001"]
+
+
+@pytest.fixture()
+def google(monkeypatch):
+    """models: 모델 이름 → 'ok' 또는 HTTP 상태 코드. 목록(GET)에는 항상 LISTED 전체가 나온다."""
+    state = {"models": {}, "posts": [], "gets": 0}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        state["gets"] += 1
+        items = [{"name": f"models/{n}", "supportedGenerationMethods": ["embedContent"] if "embedding" in n else ["generateContent"]} for n in LISTED]
+        return Resp(200, {"models": items})
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        model = url.split("/models/")[1].split(":")[0]
+        state["posts"].append(model)
+        v = state["models"].get(model, 404)
+        return ok(GOOD) if v == "ok" else err(v, f"models/{model} is not found" if v == 404 else "quota")
+    monkeypatch.setattr(ai_service.httpx, "get", fake_get)
+    monkeypatch.setattr(ai_service.httpx, "post", fake_post)
+    monkeypatch.setenv("GEMINI_API_KEY", KEY)
+    return state
+
+
+def test_find_working_models_skips_dead_models_even_if_listed(google):
+    google["models"].update({"gemini-3.5-flash": "ok", "gemini-3.1-flash-lite": 429, "gemini-2.5-pro": "ok"})     # 2.5-flash는 목록에 있지만 404
+    r = ai_service.find_working_models(KEY)
+    assert r["working"] == ["gemini-3.5-flash", "gemini-2.5-pro"]
+    tried = {t["model"]: t for t in r["tried"]}
+    assert tried["gemini-2.5-flash"]["result"] == "404" and "사용 불가" in tried["gemini-2.5-flash"]["note"]
+    assert tried["gemini-3.1-flash-lite"]["result"] == "429" and "한도" in tried["gemini-3.1-flash-lite"]["note"]
+    assert not any(x in " ".join(google["posts"]) for x in ("image", "gemma", "embedding"))                      # 이미지·임베딩·gemma는 후보에서 제외
+    assert r["listed"] == 5
+    assert google["posts"].index("gemini-3.6-flash-preview") > google["posts"].index("gemini-2.5-pro")          # 미리보기 버전은 정식 버전 뒤
+
+
+def test_find_stops_when_enough_found(google):
+    google["models"].update({"gemini-3.5-flash": "ok", "gemini-3.1-flash-lite": "ok", "gemini-2.5-flash": "ok", "gemini-2.5-pro": "ok"})
+    assert ai_service.find_working_models(KEY, want=2)["working"] == ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
+    assert len(google["posts"]) == 2
+
+
+def test_auto_model_picks_a_working_model_and_caches_it(client, google, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "auto")
+    google["models"].update({"gemini-3.5-flash": "ok"})
+    r = suggest(client)
+    assert r["mode"] == "gemini" and "gemini-3.5-flash" in r["mode_label"] and "fallback_note" not in r
+    gets = google["gets"]
+    r2 = suggest(client)                                                                        # 두 번째는 기억한 모델을 바로 사용(목록 재조회 없음)
+    assert r2["mode"] == "gemini" and google["gets"] == gets
+
+
+def test_auto_model_rediscovers_when_cached_model_is_retired(client, google, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "auto")
+    google["models"].update({"gemini-3.5-flash": "ok", "gemini-2.5-pro": "ok"})
+    assert "gemini-3.5-flash" in suggest(client)["mode_label"]
+    google["models"]["gemini-3.5-flash"] = 404                                                  # 그새 종료됨
+    r = suggest(client)
+    assert r["mode"] == "gemini" and "gemini-2.5-pro" in r["mode_label"]
+
+
+def test_auto_model_with_nothing_working_explains(client, google, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "auto")
+    r = suggest(client)                                                                         # 모든 모델이 404
+    assert r["mode"] == "demo" and "사용할 수 있는 Gemini 모델을 찾지 못했습니다" in r["fallback_note"] and "사용 불가" in r["fallback_note"]
+
+
+def test_404_for_a_fixed_model_points_to_find_and_auto(client, google, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")                                        # 이름은 맞지만 종료됨
+    note = suggest(client)["fallback_note"]
+    assert "gemini-2.5-flash" in note and "--find" in note and "GEMINI_MODEL=auto" in note and "종료" in note
+
+
+def test_find_models_endpoint(client, google, monkeypatch):
+    assert client.post("/api/ai/find-models").status_code == 401
+    assert client.post("/api/ai/find-models", headers=PARENT_BORI).status_code == 403
+    google["models"].update({"gemini-3.5-flash": "ok"})
+    r = client.post("/api/ai/find-models", headers=MORNING).json()
+    assert r["ok"] and r["working"] == ["gemini-3.5-flash"] and KEY not in json.dumps(r)
+    monkeypatch.delenv("GEMINI_API_KEY")
+    r = client.post("/api/ai/find-models", headers=MORNING).json()
+    assert r["ok"] is False and "GEMINI_API_KEY" in r["message"]
+
+
+def test_connection_test_shows_resolved_model_for_auto(client, google, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "auto")
+    google["models"].update({"gemini-3.5-flash": "ok"})
+    r = client.post("/api/ai/test", headers=MORNING).json()
+    assert r["ok"] and r["model"] == "gemini-3.5-flash" and "gemini-3.5-flash" in r["message"]
