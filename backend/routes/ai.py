@@ -23,3 +23,9 @@ def suggest_tasks(body: SuggestRequest, staff=Depends(current_staff), db: sqlite
     for s in result["suggestions"]:
         s["source_record_id"] = rec["id"]
     return result
+
+
+@router.post("/test")
+def test_ai(staff=Depends(current_staff)):
+    """AI 설정·연결 점검(직원 전용). 키 값은 응답에 포함하지 않는다."""
+    return ai_service.check_connection()

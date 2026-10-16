@@ -22,6 +22,8 @@ async function request(method, path, body, raw) {
 const q = (o) => { const p = new URLSearchParams(Object.entries(o).filter(([, v]) => v !== '' && v != null)); return p.size ? `?${p}` : ''; };
 
 export const api = {
+  health: () => request('GET', '/api/health'),
+  testAi: () => request('POST', '/api/ai/test'),
   config: () => request('GET', '/api/auth/config'),
   me: () => request('GET', '/api/auth/me'),
   login: (email, password) => request('POST', '/api/auth/login', { email, password }),

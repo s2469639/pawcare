@@ -534,6 +534,13 @@ with sync_playwright() as p:
     pick("오전 담당자 · 한지우")
     step("퇴원 처리: 관리자만, 확인 체크 필수, 새 기록 차단·목록에서 숨김·삭제 예정 현황, 보호자 안내(공개된 내용은 유지), 재등록으로 복구")
 
+    # AI 연결 테스트: 키가 없는 환경에서는 원인을 알려준다
+    page.goto(f"{BASE}/#/ai"); expect(page.get_by_role("heading", name="AI 연결 상태")).to_be_visible()
+    page.get_by_role("button", name="연결 테스트").click()
+    expect(page.locator("#ai-test-out")).to_contain_text("연결 안 됨"); expect(page.locator("#ai-test-out")).to_contain_text("GEMINI_API_KEY가 설정되지 않았습니다")
+    shot("36-ai-connection-test")
+    step("AI 연결 테스트: 키가 없으면 원인을 안내(데모 분석으로 동작)")
+
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
     pick("관리자 · 오하준")

@@ -103,12 +103,22 @@ export async function recordNewView(ctx) {
 export async function aiView(ctx) {
   const { root, params } = ctx;
   if (!params[0]) {
-    const recs = await api.records({ unlinked: 'true' });
+    const [recs, health] = await Promise.all([api.records({ unlinked: 'true' }), api.health()]);
     root.innerHTML = html`<div class="page-head"><div><h1>AI 업무 정리</h1><p>오늘의 기록 중 아직 후속 업무와 연결되지 않은 기록에서 확인할 일을 제안받습니다. 제안은 직원이 등록하기 전까지 업무가 아닙니다.</p></div></div>
+      <div class="card" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">AI 연결 상태</h3><button class="btn sm secondary" id="ai-test">연결 테스트</button></div>
+        <p id="ai-test-out" class="small" role="status" style="margin-top:8px">${health.ai_configured ? '키와 모델이 설정되어 있습니다. 실제로 연결되는지는 "연결 테스트"로 확인할 수 있어요.' : '키 또는 모델이 설정되지 않아 지금은 데모 분석(규칙 기반)으로 동작합니다.'}</p></div>
       ${recs.length ? html`<div class="task-list">${recs.map((r) => html`<article class="task-row s-todo" style="grid-template-columns:120px 1fr auto"><a class="task-dog" href="#/dogs/${r.dog_id}">${r.dog_name}</a>
         <div><p class="task-title" style="font-weight:500">${r.content}</p><p class="task-meta">${fmtTime(r.observed_at)} · ${r.record_type}${r.structured_value ? ` · ${r.structured_value}` : ''} · ${r.author_name}</p></div>
         <a class="btn sm" href="#/ai/${r.id}">${icon('spark')} 분석하기</a></article>`)}</div>`
       : empty('정리할 기록이 없습니다', '후속 업무와 연결되지 않은 오늘의 기록이 없습니다.', html`<br><a class="btn" href="#/record/new">돌봄 기록 작성</a>`)}`.toString();
+    root.querySelector('#ai-test').addEventListener('click', (e) => busy(e.currentTarget, async () => {
+      const out = root.querySelector('#ai-test-out');
+      out.textContent = '연결을 확인하는 중…';
+      try {
+        const r = await api.testAi();
+        out.innerHTML = `<b>${r.ok ? '✔ 연결됨' : '✘ 연결 안 됨'}</b> · ${esc(r.message)}${r.model ? ` <span class="muted">(모델: ${esc(r.model)})</span>` : ''}`;
+      } catch (err) { out.textContent = err.message; }
+    }));
     return;
   }
   const rec = await api.record(params[0]);
