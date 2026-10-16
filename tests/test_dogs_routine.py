@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 from backend.database import KST
-from .conftest import ADMIN, AFTERNOON, MORNING, OTHER_ORG
+from .conftest import ADMIN, AFTERNOON, MORNING, OTHER_ORG, PARENT_BORI, PARENT_TOFU
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 NEW = {"name": "초코", "breed": "닥스훈트", "birth_date": "2023-05-01", "owner_name": "강민지"}
@@ -46,17 +46,17 @@ def test_photo_upload_serve_replace_delete(client, tmp_path):
     did = client.post("/api/dogs", json=NEW, headers=MORNING).json()["id"]
     d = upload(client, did).json()
     assert d["photo"].startswith("uploads/dogs/") and d["photo"].endswith(".png")
-    served = client.get("/" + d["photo"])
+    served = client.get("/" + d["photo"], headers=MORNING)
     assert served.status_code == 200 and served.content == PNG and served.headers["content-type"] == "image/png"
     assert served.headers["x-content-type-options"] == "nosniff"
     old = tmp_path / "uploads" / "dogs" / d["photo"].rsplit("/", 1)[1]
     assert old.exists()
     d2 = upload(client, did).json()   # 교체하면 이전 파일은 삭제
     assert d2["photo"] != d["photo"] and not old.exists()
-    assert client.get("/" + d2["photo"]).status_code == 200
+    assert client.get("/" + d2["photo"], headers=AFTERNOON).status_code == 200
     r = client.delete(f"/api/dogs/{did}/photo", headers=MORNING).json()
     assert r["photo"] is None and not any((tmp_path / "uploads" / "dogs").iterdir())
-    assert client.get("/" + d2["photo"]).status_code == 404
+    assert client.get("/" + d2["photo"], headers=MORNING).status_code == 404
 
 
 def test_photo_rejects_bad_files(client):
@@ -76,7 +76,7 @@ def test_photo_org_isolation_and_path_safety(client):
     assert client.delete(f"/api/dogs/{did}/photo", headers=OTHER_ORG).status_code == 404
     assert client.post(f"/api/dogs/{did}/photo", content=PNG, headers={"Content-Type": "image/png"}).status_code == 401
     for bad in ("..%2f..%2fetc%2fpasswd", "a.txt", "x.svg", ".env", "%2e%2e%2fsecret.png"):
-        assert client.get(f"/uploads/dogs/{bad}").status_code == 404, bad
+        assert client.get(f"/uploads/dogs/{bad}", headers=MORNING).status_code == 404, bad
 
 
 # ---------- 일과 ----------
@@ -136,3 +136,14 @@ def test_migration_adds_routine_to_old_db(tmp_path):
     database.init_db(c); database.init_db(c)   # 두 번 실행해도 안전
     assert c.execute("SELECT COUNT(*) FROM routine_blocks").fetchone()[0] == 6
     assert c.execute("SELECT b.name FROM care_records r JOIN routine_blocks b ON b.id=r.block_id").fetchone()[0] == "점심·휴식"
+
+
+def test_profile_photo_requires_login_and_matching_org_or_guardian(client):
+    d = upload(client, 1).json()                                            # 보리(유치원 1) 프로필 사진
+    url = "/" + d["photo"]
+    assert client.get(url).status_code == 401                                # 로그인하지 않으면 주소를 알아도 열 수 없음
+    assert client.get(url, headers=AFTERNOON).status_code == 200            # 같은 유치원 직원
+    assert client.get(url, headers=OTHER_ORG).status_code == 404            # 다른 유치원 직원: 존재 여부도 알 수 없음
+    assert client.get(url, headers=PARENT_BORI).status_code == 200          # 보리의 보호자
+    assert client.get(url, headers=PARENT_TOFU).status_code == 404          # 다른 집 보호자
+    assert client.get(url, headers=MORNING).headers["cache-control"].startswith("private")

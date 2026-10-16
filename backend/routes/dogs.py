@@ -9,6 +9,7 @@ from ..database import get_db, now_iso, upload_dir
 from ..deps import current_staff, get_dog_or_404
 from ..schemas import DogCreate, DogPatch
 from .common import TASK_SELECT, dog_dict, task_dict, today_prefix
+from .media import attach_media
 
 router = APIRouter(prefix="/api/dogs", tags=["dogs"])
 
@@ -25,7 +26,7 @@ def _record_view(db, org_id: int, dog_id: int, scope: str):
         rec["tasks"] = [dict(t) for t in db.execute(
             "SELECT id,title,acknowledgment_status,action_status FROM tasks WHERE source_record_id=? ORDER BY id",
             (rec["id"],))]
-    return rows
+    return attach_media(db, rows)
 
 
 @router.get("")

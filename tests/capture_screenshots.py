@@ -79,6 +79,22 @@ with sync_playwright() as p:
     page.locator("#ok").click(); expect(page.locator("#pp-prev img")).to_have_count(1); shot("18-register-dog")
     m.get_by_role("button", name="등록", exact=True).click(); expect(page.get_by_role("heading", name="초코")).to_be_visible(); shot("19-new-dog-profile")
 
+    # 사진 첨부 (샘플 반려견 이미지로 '찍은 사진' 대신 사용)
+    def pet_photo(name, bg, path):
+        base = Image.new("RGB", (1200, 800), bg)
+        av = Image.open(os.path.join(os.path.dirname(__file__), "..", "frontend", "assets", "dogs", f"{name}.webp")).convert("RGBA").resize((520, 520))
+        base.paste(av, (340, 140), av); base.save(path, "JPEG", quality=88)
+    ph = [os.path.join(tempfile.gettempdir(), f"pet_{n}.jpg") for n in ("bori", "tofu")]
+    pet_photo("bori", (233, 224, 205), ph[0]); pet_photo("tofu", (214, 224, 232), ph[1])
+    page.goto(f"{BASE}/#/record/new?dog=1")
+    page.locator("#content").fill("산책 후 사진을 남깁니다. 두부와 함께 놀았어요.")
+    page.locator("#pa-file").set_input_files(ph); expect(page.locator(".pa-item")).to_have_count(2)
+    page.locator('[data-tag="2"]').click(); shot("24-photo-attach", True)
+    page.get_by_role("button", name="기록 저장").click(); expect(page.locator("#done")).to_contain_text("사진 2장을 첨부했습니다.")
+    page.goto(f"{BASE}/#/dogs/1"); expect(page.locator(".timeline").first.locator(".thumb")).to_have_count(2); shot("26-dog-photos", True)
+    page.locator(".timeline").first.locator(".thumb").first.click(); expect(page.locator(".viewer img")).to_be_visible()
+    page.wait_for_timeout(500); shot("25-photo-viewer"); page.keyboard.press("Escape")
+
     # 로그인 · 보호자 초대 · 가입
     page.goto(f"{BASE}/#/dogs/4"); page.get_by_role("button", name="초대 코드 만들기").click()
     expect(page.locator(".invite-code")).to_be_visible(); code = page.locator(".invite-code").inner_text().strip(); shot("20-invite-code")

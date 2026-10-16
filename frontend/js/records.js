@@ -2,6 +2,7 @@ import { api, ApiError } from './api.js';
 import { html, icon, fmtTime, fmtWhen, nowKstLocalInput, esc } from './util.js';
 import { empty, busy, guarded, toast, fieldErrors, showFieldError, skeleton, avatar } from './ui.js';
 import { openTaskModal } from './tasks.js';
+import { photoAttachField, bindPhotoAttach, uploadAll } from './media.js';
 
 const TYPES = ['식사', '배변', '활동', '행동', '특이사항', '기타'];
 const QUICK = {
@@ -25,6 +26,7 @@ export async function recordNewView(ctx) {
       <div class="field" data-field="structured_value" id="quick"></div>
       <div class="field"><label for="content">상세 메모</label><textarea class="input" id="content" name="content" maxlength="1000" placeholder="예: 점심을 평소보다 적게 먹었습니다. 오후 담당자는 …"></textarea>
         <p class="hint">다음 담당자가 해야 할 일이 있다면 문장에 적어 주세요. 기록을 저장해도 업무는 자동으로 만들어지지 않습니다.</p></div>
+      ${photoAttachField(dogs)}
       <div class="field"><label for="block">일과 구간</label><select class="input" id="block" name="block_id"></select>
         <p class="hint">기록 시각에 맞춰 자동으로 정해지고, 필요하면 직접 바꿀 수 있어요.</p></div>
       <div class="row2"><div class="field"><label for="at">기록 시각</label><input class="input" type="datetime-local" id="at" name="observed_at" value="${nowKstLocalInput()}"></div>
@@ -49,6 +51,8 @@ export async function recordNewView(ctx) {
   paintBlocks();
   if (preset) blockSel.value = String(preset.id);
   f.observed_at.addEventListener('input', paintBlocks);
+  const photos = bindPhotoAttach(f, { getDogId: () => +f.dog_id.value || null });
+  f.dog_id.addEventListener('change', () => photos.onDogChange());
   f.querySelectorAll('[name=record_type]').forEach((r) => r.addEventListener('change', () => { type = r.value; paintQuick(); }));
   f.addEventListener('submit', (e) => {
     e.preventDefault(); fieldErrors(f, { errors: [] });
@@ -71,6 +75,21 @@ export async function recordNewView(ctx) {
         root.querySelector('#again').addEventListener('click', () => { root.querySelector('#done').innerHTML = ''; f.content.value = ''; f.querySelectorAll('[name=structured_value]').forEach((x) => { x.checked = false; }); f.dog_id.focus(); });
         root.querySelector('#done').scrollIntoView({ block: 'start' });
         f.content.value = '';
+        const pending = photos.items.slice(), tagIds = photos.tagIds();
+        if (pending.length) {
+          const status = document.createElement('p');
+          status.className = 'small'; status.setAttribute('role', 'status'); status.style.marginTop = '10px';
+          root.querySelector('#done .card').appendChild(status);
+          const run = async (list) => {
+            status.textContent = `사진 올리는 중… (0/${list.length})`;
+            const failed = await uploadAll(rec.id, list, tagIds, (n, total) => { status.textContent = `사진 올리는 중… (${n}/${total})`; });
+            if (!failed.length) { status.textContent = `사진 ${list.length}장을 첨부했습니다.`; return; }
+            status.innerHTML = `<b>사진 ${failed.length}장을 올리지 못했습니다.</b> <span class="muted">${esc(failed[0].message)}</span> <button type="button" class="btn sm secondary" id="retry-up">다시 올리기</button>`;
+            status.querySelector('#retry-up').addEventListener('click', (ev) => { ev.target.disabled = true; run(failed.map((x) => x.item)); });
+          };
+          photos.clear();
+          await run(pending);
+        }
       } catch (err) {
         if (err instanceof ApiError && err.errors.length) fieldErrors(f, err);
         else if (err.status === 422) showFieldError(f, 'content', err.message);

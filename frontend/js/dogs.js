@@ -1,8 +1,9 @@
 import { api, ApiError } from './api.js';
-import { html, icon, fmtTime, fmtWhen, josa } from './util.js';
+import { html, icon, fmtTime, fmtWhen, josa, esc } from './util.js';
 import { avatar, taskRow, empty, ackBadge, actionBadge, busy, guarded, toast, openModal, fieldErrors, showFieldError } from './ui.js';
 import { bindTaskActions } from './tasks.js';
 import { photoField, bindPhotoField } from './cropper.js';
+import { thumbs, openMediaViewer, processImage, uploadAll, MAX_PER_RECORD } from './media.js';
 
 const CTX_LABELS = [['meal', '식사 관련 주의사항'], ['sensitivity', '알레르기·민감성 정보'], ['behavior', '행동 관련 주의사항'], ['owner_request', '보호자 요청사항'], ['other', '기타 돌봄 참고사항']];
 const STATUS = [['all', '전체'], ['needs_check', '확인 필요'], ['has_task', '진행할 업무 있음'], ['clear', '열린 업무 없음']];
@@ -47,6 +48,7 @@ export async function dogDetailView(ctx) {
   }
   const open = d.tasks.filter((t) => t.action_status !== 'completed');
   const g = await api.guardians(d.id);
+  const tagged = await api.dogMedia(d.id, 'today');
   root.innerHTML = html`
     <a class="crumb" href="#/dogs">${icon('back')} 반려견 목록</a>
     <div class="card"><div class="dog-head">${avatar(d, 'lg')}
@@ -63,10 +65,15 @@ export async function dogDetailView(ctx) {
       <div class="panel" style="padding:4px 18px">${d.records_today.length ? html`<ul class="timeline">${d.records_today.map((r) => html`<li><div class="t">${fmtTime(r.observed_at)}</div><div class="body">
         <div><span class="badge b-done">${r.record_type}</span>${r.block_name ? html` <span class="badge b-ack">${r.block_name}</span>` : ''} ${r.structured_value && r.structured_value !== '직접 입력' ? html`<b>${r.structured_value}</b>` : ''} <span class="small muted">· ${r.author_name} (${r.author_role})</span></div>
         <p style="margin-top:4px">${r.content}</p>
+        ${thumbs(r.media, r.id)}
         <div class="tags">${r.tasks.map((t) => html`<a class="link-task" href="#/tasks/${t.id}">${icon('list')} ${t.title} · ${t.acknowledgment_status === 'pending' ? '확인 대기' : '확인 완료'} / ${{ todo: '조치 필요', in_progress: '진행 중', completed: '조치 완료' }[t.action_status]}</a>`)}
           ${r.tasks.length ? '' : html`<a class="btn sm secondary" href="#/ai/${r.id}">${icon('spark')} 후속 업무 제안</a>`}
-          ${r.parent_status === 'approved' ? html`<span class="badge b-ack">${icon('check')} 보호자 공개 승인됨</span><button class="btn sm ghost" data-revoke="${r.id}">공개 취소</button>` : html`<span class="badge b-private">${icon('lock')} 내부 기록</span><button class="btn sm ghost" data-approve="${r.id}">보호자 공개 승인…</button>`}</div></div></li>`)}</ul>`
+          ${r.media.length < MAX_PER_RECORD ? html`<button class="btn sm ghost" data-add-photo="${r.id}">${icon('plus')} 사진 추가</button>` : ''}${r.parent_status === 'approved' ? html`<span class="badge b-ack">${icon('check')} 보호자 공개 승인됨</span><button class="btn sm ghost" data-revoke="${r.id}">공개 취소</button>` : html`<span class="badge b-private">${icon('lock')} 내부 기록</span><button class="btn sm ghost" data-approve="${r.id}">보호자 공개 승인…</button>`}</div></div></li>`)}</ul>`
         : html`<div style="padding:14px 0">${empty('오늘 작성된 기록이 없습니다', '', html`<br><a class="btn" href="#/record/new?dog=${d.id}">돌봄 기록 작성</a>`)}</div>`}</div></section>
+
+    <section class="section" id="dog-photos" aria-labelledby="photos-title"><div class="head"><h2 id="photos-title">오늘 찍힌 사진</h2><span class="small muted">${tagged.length}장 · 직원만 볼 수 있어요</span></div>
+      ${tagged.length ? html`<div class="panel" style="padding:14px 18px"><div class="thumbs big" data-tagged="1">${tagged.map((m, i) => html`<button type="button" class="thumb" data-media-open="${i}" aria-label="사진 ${i + 1} 크게 보기 (${m.dog_names.join(', ')})"><img src="/api/media/${m.id}/file?size=thumb" alt="" loading="lazy"></button>`)}</div><p class="hint small muted" style="margin-top:8px">이 아이가 함께 찍힌 사진이 모입니다. 다른 아이의 기록에 첨부된 단체 사진도 포함돼요.</p></div>`
+        : empty('오늘 찍힌 사진이 없습니다', '돌봄 기록을 작성할 때 사진을 첨부하거나, 기록 옆의 "사진 추가"를 눌러 보세요.')}</section>
 
     <section class="section" id="dog-tasks"><div class="head"><h2>처리해야 할 업무</h2></div>
       ${d.tasks.length ? html`<div class="task-list">${d.tasks.map((t) => taskRow(t, staff, { showDog: false }))}</div>` : empty('이 반려견의 업무가 없습니다', '기록을 바탕으로 후속 업무를 만들 수 있습니다.')}</section>
@@ -89,6 +96,27 @@ export async function dogDetailView(ctx) {
   root.querySelectorAll('[data-revoke-invite]').forEach((b) => b.addEventListener('click', () => busy(b, () => guarded(async () => {
     await api.revokeInvite(+b.dataset.revokeInvite); toast('초대 코드를 취소했습니다.'); ctx.rerender();
   }))));
+  root.querySelectorAll('.thumbs[data-rec] [data-media-open]').forEach((b) => b.addEventListener('click', () => {
+    const rec = d.records_today.find((r) => r.id === +b.closest('.thumbs').dataset.rec);
+    openMediaViewer(rec.media, +b.dataset.mediaOpen, ctx);
+  }));
+  root.querySelectorAll('[data-tagged] [data-media-open]').forEach((b) => b.addEventListener('click', () => openMediaViewer(tagged, +b.dataset.mediaOpen, ctx)));
+  const picker = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true });
+  let addTo = null;
+  root.querySelectorAll('[data-add-photo]').forEach((b) => b.addEventListener('click', () => { addTo = d.records_today.find((r) => r.id === +b.dataset.addPhoto); picker.click(); }));
+  picker.addEventListener('change', () => guarded(async () => {
+    const files = [...picker.files]; picker.value = '';
+    const rec = addTo; if (!rec || !files.length) return;
+    const room = MAX_PER_RECORD - rec.media.length;
+    if (files.length > room) toast(`한 기록에는 최대 ${MAX_PER_RECORD}장까지 첨부할 수 있어요. ${room}장만 올립니다.`, 'error');
+    const items = [];
+    for (const f of files.slice(0, room)) { try { items.push({ blob: await processImage(f) }); } catch (e) { toast(e.message, 'error'); } }
+    if (!items.length) return;
+    toast(`사진 ${items.length}장을 올리는 중…`);
+    const failed = await uploadAll(rec.id, items, [d.id]);
+    toast(failed.length ? `${failed.length}장을 올리지 못했습니다. ${failed[0].message}` : `사진 ${items.length}장을 첨부했습니다.`, failed.length ? 'error' : 'ok');
+    ctx.rerender();
+  }));
   bindTaskActions(root, ctx);
   root.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', () => approveModal(ctx, d.records_today.find((r) => r.id === +b.dataset.approve))));
   root.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => busy(b, () => guarded(async () => { await api.parentApproval(+b.dataset.revoke, { action: 'revoke' }); toast('보호자 공개를 취소했습니다.'); ctx.rerender(); }))));

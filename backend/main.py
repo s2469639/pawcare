@@ -4,19 +4,20 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import re
+import sqlite3
 
 from fastapi.responses import FileResponse
 
-from .database import ROOT, connect, init_db, upload_dir
+from .database import ROOT, connect, get_db, init_db, upload_dir
 from . import auth as auth_lib
-from .deps import FieldError
-from .routes import ai, auth, dogs, invites, misc, records, routine, tasks
+from .deps import FieldError, current_account
+from .routes import ai, auth, dogs, invites, media, misc, records, routine, tasks
 from .seed import seed
 
 
@@ -74,7 +75,7 @@ def health():
             "ai_configured": bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"))}
 
 
-for r in (auth.router, invites.router, misc.router, dogs.router, records.router, tasks.router, ai.router, routine.router):
+for r in (auth.router, invites.router, misc.router, dogs.router, media.router, records.router, tasks.router, ai.router, routine.router):
     app.include_router(r)
 
 _FILE = re.compile(r"^[A-Za-z0-9._-]+\.(webp|jpg|png)$")
@@ -82,14 +83,25 @@ _MEDIA = {"webp": "image/webp", "jpg": "image/jpeg", "png": "image/png"}
 
 
 @app.get("/uploads/dogs/{filename}")
-def uploaded_photo(filename: str):
-    """업로드된 반려견 사진. 파일명은 무작위이며 경로 이동 문자는 허용하지 않는다."""
-    if not _FILE.match(filename) or ".." in filename:
+def uploaded_photo(filename: str, account: dict = Depends(current_account), db: sqlite3.Connection = Depends(get_db)):
+    """반려견 프로필 사진. 로그인한 사람 중 같은 유치원 직원 또는 그 아이의 보호자만 볼 수 있다.
+    권한이 없으면 파일이 있는지 알 수 없도록 404로 답한다. 파일명은 무작위이며 경로 이동 문자는 허용하지 않는다."""
+    m = _FILE.match(filename)
+    if not m or ".." in filename:
         raise HTTPException(404, "사진을 찾을 수 없습니다.")
+    dog_id = int(filename.split("-", 1)[0]) if filename.split("-", 1)[0].isdigit() else None
+    dog = db.execute("SELECT org_id FROM dogs WHERE id=?", (dog_id,)).fetchone() if dog_id else None
+    if dog is None:
+        raise HTTPException(404, "사진을 찾을 수 없습니다.")
+    if account["role"] == "staff":
+        allowed = dog["org_id"] == account["org_id"]
+    else:
+        allowed = db.execute("SELECT 1 FROM guardian_dogs WHERE account_id=? AND dog_id=?", (account["id"], dog_id)).fetchone() is not None
     path = upload_dir() / "dogs" / filename
-    if not path.is_file():
+    if not allowed or not path.is_file():
         raise HTTPException(404, "사진을 찾을 수 없습니다.")
     return FileResponse(path, media_type=_MEDIA[filename.rsplit(".", 1)[1]],
-                        headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
+                        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
+
 
 app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True), name="frontend")

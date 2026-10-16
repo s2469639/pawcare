@@ -94,11 +94,11 @@ export function showFieldError(root, name, message) {
   if (inp) inp.setAttribute('aria-describedby', p.id);
 }
 
-export function openModal({ title, body, onMount, onClose }) {
+export function openModal({ title, body, onMount, onClose, wide = false }) {
   const prev = document.activeElement;
   const ov = document.createElement('div');
   ov.className = 'overlay';
-  ov.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="mh"><h2 id="mt">${esc(title)}</h2><button class="btn ghost sm" data-close aria-label="닫기">✕</button></div><div class="mb">${body}</div></div>`;
+  ov.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="mt"><div class="mh"><h2 id="mt">${esc(title)}</h2><button class="btn ghost sm" data-close aria-label="닫기">✕</button></div><div class="mb">${body}</div></div>`;
   document.body.appendChild(ov);
   const close = () => { if (!ov.isConnected) return; ov.remove(); document.removeEventListener('keydown', onKey); prev?.focus?.(); onClose?.(); };
   // 모달이 겹쳐 열린 경우 ESC는 가장 위의 창만 닫는다

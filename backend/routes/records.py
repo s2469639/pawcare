@@ -6,6 +6,7 @@ from ..database import block_for, get_db, now_iso
 from ..deps import current_staff, get_dog_or_404, get_staff_in_org
 from ..schemas import ApprovalBody, RecordCreate
 from .common import today_prefix
+from .media import attach_media
 
 router = APIRouter(prefix="/api/records", tags=["records"])
 
@@ -23,7 +24,7 @@ def list_records(scope: str = Query("today", pattern="^(today|all)$"), unlinked:
         args.append(today_prefix() + "%")
     if unlinked:
         sql += " AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.source_record_id=r.id)"
-    return [dict(r) for r in db.execute(sql + " ORDER BY r.observed_at DESC, r.id DESC", args)]
+    return attach_media(db, [dict(r) for r in db.execute(sql + " ORDER BY r.observed_at DESC, r.id DESC", args)])
 
 
 @router.get("/{record_id}")
@@ -31,7 +32,7 @@ def get_record(record_id: int, staff=Depends(current_staff), db: sqlite3.Connect
     r = db.execute(BASE + "WHERE r.id=? AND r.org_id=?", (record_id, staff["org_id"])).fetchone()
     if r is None:
         raise HTTPException(404, "기록을 찾을 수 없습니다.")
-    return dict(r)
+    return attach_media(db, [dict(r)])[0]
 
 
 @router.post("", status_code=201)
@@ -55,7 +56,7 @@ def create_record(body: RecordCreate, staff=Depends(current_staff), db: sqlite3.
         "INSERT INTO care_records(org_id,dog_id,author_id,record_type,structured_value,content,observed_at,created_at,block_id)"
         " VALUES (?,?,?,?,?,?,?,?,?)",
         (staff["org_id"], body.dog_id, author_id, body.record_type, sv, content, observed, now, block_id))
-    return dict(db.execute(BASE + "WHERE r.id=?", (cur.lastrowid,)).fetchone())
+    return attach_media(db, [dict(db.execute(BASE + "WHERE r.id=?", (cur.lastrowid,)).fetchone())])[0]
 
 
 @router.patch("/{record_id}/parent-approval")

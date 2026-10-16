@@ -116,6 +116,25 @@ CREATE TABLE IF NOT EXISTS task_action_logs (
     note TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    record_id INTEGER NOT NULL REFERENCES care_records(id),
+    kind TEXT NOT NULL DEFAULT 'photo' CHECK (kind IN ('photo','video')),
+    file TEXT NOT NULL,
+    thumb TEXT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    uploaded_by INTEGER NOT NULL REFERENCES staff(id),
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS media_dogs (
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    dog_id INTEGER NOT NULL REFERENCES dogs(id),
+    PRIMARY KEY (media_id, dog_id)
+);
+CREATE INDEX IF NOT EXISTS idx_media_record ON media(record_id);
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     org_id INTEGER NOT NULL REFERENCES organizations(id),
@@ -159,7 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id, action_status);
 CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 """
 
-TABLES = ["sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
+TABLES = ["media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
           "care_records", "routine_blocks", "dogs", "staff", "organizations"]
 
 

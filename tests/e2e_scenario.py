@@ -226,7 +226,11 @@ with sync_playwright() as p:
     expect(page.get_by_role("heading", name="초코")).to_be_visible()
     src = page.locator(".dog-head .avatar img").get_attribute("src")
     assert src.startswith("uploads/dogs/"), src
-    out = Image.open(io.BytesIO(urllib.request.urlopen(f"{BASE}/{src}").read())).convert("RGB")
+    try:
+        urllib.request.urlopen(f"{BASE}/{src}"); raise AssertionError("로그인 없이 프로필 사진이 열림")
+    except urllib.error.HTTPError as e:
+        assert e.code == 401                                                       # 프로필 사진도 로그인한 권한자만 열람
+    out = Image.open(io.BytesIO(page.request.get(f"{BASE}/{src}").body())).convert("RGB")
     assert out.size == (512, 512), out.size                                     # 항상 정사각형
     left, center = out.getpixel((60, 256)), out.getpixel((300, 256))
     assert left[0] > 150 and left[2] < 100, f"왼쪽은 빨강이어야 함 {left}"          # 끌어서 이동한 결과가 반영됨
@@ -248,11 +252,7 @@ with sync_playwright() as p:
     page.locator(".modal").get_by_role("button", name="저장").click()
     expect(page.locator(".dog-head .avatar img")).to_have_count(0)
     assert urllib.request.urlopen(urllib.request.Request(f"{BASE}/{src}")) if False else True
-    try:
-        urllib.request.urlopen(f"{BASE}/{src}"); raise AssertionError("삭제한 사진이 아직 제공됨")
-    except urllib.error.HTTPError as e:
-        assert e.code == 404
-    errors[:] = [e for e in errors if "409" not in e and "404" not in e]   # 중복 등록(409)·삭제한 사진 조회(404)는 일부러 일으킨 응답
+    assert page.request.get(f"{BASE}/{src}").status == 404, "삭제한 사진이 아직 제공됨"
     step("중복 등록 거부, 프로필 수정에서 사진 삭제 시 파일도 제거")
 
     # 10-c. 일과
@@ -342,6 +342,73 @@ with sync_playwright() as p:
     page.get_by_role("button", name="로그인", exact=True).click()
     expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
+    # 10-e. 사진 첨부 (EXIF 제거, 태그, 뷰어, 인증된 열람)
+    def make_jpeg(path, w, h, color):
+        exif = Image.Exif(); exif[0x010F] = "SecretCameraMaker"
+        g = exif.get_ifd(0x8825); g[1], g[2], g[3], g[4] = "N", (37.0, 33.0, 59.0), "E", (126.0, 58.0, 41.0)
+        Image.new("RGB", (w, h), color).save(path, "JPEG", exif=exif.tobytes())
+    p1, p2 = os.path.join(tempfile.gettempdir(), "pet_a.jpg"), os.path.join(tempfile.gettempdir(), "pet_b.jpg")
+    make_jpeg(p1, 2400, 1600, (200, 140, 90)); make_jpeg(p2, 800, 1200, (90, 140, 200))
+    notimg = os.path.join(tempfile.gettempdir(), "notes.txt"); open(notimg, "w").write("not an image")
+    page.goto(f"{BASE}/#/record/new?dog=1")
+    page.locator("#f").get_by_text("활발함", exact=True).click() if False else None
+    page.locator("#content").fill("산책 후 사진을 남깁니다.")
+    page.locator("#pa-file").set_input_files(notimg)                                      # 이미지가 아닌 파일은 거부
+    expect(page.get_by_text("JPG, PNG, WebP 사진만 사용할 수 있습니다")).to_be_visible()
+    page.locator("#pa-file").set_input_files([p1, p2])
+    expect(page.locator(".pa-item")).to_have_count(2)
+    expect(page.locator('[data-tag="1"]')).to_have_attribute("aria-pressed", "true")       # 기본 태그: 기록의 반려견(보리)
+    page.locator('[data-tag="2"]').click()                                                 # 두부도 함께 찍힘
+    shot("24-photo-attach")
+    page.get_by_role("button", name="기록 저장").click()
+    expect(page.locator("#done")).to_contain_text("사진 2장을 첨부했습니다.")
+    recs = page.request.get(f"{BASE}/api/records").json()
+    mine = [r for r in recs if r["media"]][0]
+    assert len(mine["media"]) == 2 and all(m["dog_ids"] == [1, 2] for m in mine["media"]), mine["media"]
+    raw = page.request.get(f"{BASE}/api/media/{mine['media'][0]['id']}/file").body()
+    assert raw[:4] == b"RIFF" and raw[8:12] == b"WEBP" and b"SecretCameraMaker" not in raw and b"Exif" not in raw
+    im = Image.open(io.BytesIO(raw)); assert max(im.size) == 1600 and not dict(im.getexif()), im.size
+    for m in mine["media"]:                                                                # 로그인하지 않은 요청은 열 수 없다
+        try:
+            urllib.request.urlopen(f"{BASE}/api/media/{m['id']}/file"); raise AssertionError("로그인 없이 사진이 열림")
+        except urllib.error.HTTPError as e:
+            assert e.code == 401
+    step("사진 첨부: 비이미지 거부, 두 장 업로드·태그, 서버 저장본에 EXIF/GPS 없음·1600px 이하, 로그인 없이는 열람 불가")
+
+    page.goto(f"{BASE}/#/dogs/1")
+    thumbs = page.locator(".timeline").first.locator(".thumb")
+    expect(thumbs).to_have_count(2)
+    thumbs.first.click()
+    expect(page.locator(".viewer img")).to_be_visible(); shot("25-photo-viewer")
+    page.locator('.modal [data-t="3"]').click()                                            # 뷰어에서 모카도 태그
+    expect(page.locator('.modal [data-t="3"]')).to_have_attribute("aria-pressed", "true")
+    page.keyboard.press("Escape")
+    expect(page.locator(".viewer img")).to_have_count(0)
+    page.goto(f"{BASE}/#/dogs/3")                                                          # 모카 프로필에도 단체 사진이 보임
+    expect(page.locator("#dog-photos .thumb")).to_have_count(1)
+    page.goto(f"{BASE}/#/dogs/2")                                                          # 두부는 두 장
+    expect(page.locator("#dog-photos .thumb")).to_have_count(2)
+    page.goto(f"{BASE}/#/dogs/1")                                                          # 기록 옆 '사진 추가'
+    with page.expect_file_chooser() as fc:
+        page.get_by_role("button", name="사진 추가").first.click()
+    fc.value.set_files(p2)
+    expect(page.locator(".timeline").first.locator(".thumb")).to_have_count(3)
+    page.once("dialog", lambda d: d.accept())                                              # 삭제는 확인 후
+    page.locator(".timeline").first.locator(".thumb").first.click()
+    page.get_by_role("button", name="사진 삭제").click()
+    page.keyboard.press("Escape")
+    expect(page.locator(".timeline").first.locator(".thumb")).to_have_count(2)
+    step("사진 뷰어: 태그 수정이 다른 아이 프로필에 반영, 기록에 사진 추가, 삭제")
+
+    # 보호자는 아직 사진을 볼 수 없다(공개 승인 기능 전)
+    page.locator("#who").select_option(label="보호자 · 김서연 (보리)")
+    expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
+    assert page.request.get(f"{BASE}/api/media/{mine['media'][0]['id']}/file").status == 403
+    assert page.request.get(f"{BASE}/api/records").status == 403
+    page.locator("#who").select_option(label="오전 담당자 · 한지우")
+    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
+    step("보호자 계정은 첨부 사진·기록 API 접근 불가")
+
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
     page.locator("#who").select_option(label="관리자 · 오하준")
@@ -358,6 +425,10 @@ with sync_playwright() as p:
     assert not overflow, "모바일 가로 스크롤 발생"
     step("390px 폭에서 가로 스크롤 없음")
 
+    for code, n in (("409", 1),):                                  # 중복 등록 거부(409)는 의도한 1건. 메시지가 늦게 기록돼도 이 개수만 허용
+        for _ in range(n):
+            hit = next((e for e in errors if code in e), None)
+            if hit: errors.remove(hit)
     assert not errors, errors
     step("콘솔 오류 없음")
     b.close()
