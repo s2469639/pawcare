@@ -16,6 +16,13 @@ def now_iso() -> str:
     return datetime.now(KST).replace(microsecond=0, tzinfo=None).isoformat()
 
 
+def add_months(d: datetime, months: int) -> datetime:
+    """달력 기준으로 개월을 더한다. 말일이 없는 달이면 그 달의 말일로 맞춘다(예: 11/30 + 3개월 = 2/28)."""
+    import calendar
+    y, m = divmod(d.year * 12 + d.month - 1 + months, 12)
+    return d.replace(year=y, month=m + 1, day=min(d.day, calendar.monthrange(y, m + 1)[1]))
+
+
 def now_precise() -> str:
     """마이크로초까지 기록하는 시각. '새 알림장' 판정처럼 같은 초 안의 선후를 구분해야 할 때 쓴다(문자열 비교가 시간 순서와 일치)."""
     return datetime.now(KST).replace(tzinfo=None).isoformat(timespec="microseconds")
@@ -75,7 +82,10 @@ CREATE TABLE IF NOT EXISTS dogs (
     care_context TEXT NOT NULL DEFAULT '{}',
     attending INTEGER NOT NULL DEFAULT 1,
     photo TEXT,
-    consent_at TEXT
+    consent_at TEXT,
+    discharged_at TEXT,
+    purge_after TEXT,
+    purged_at TEXT
 );
 CREATE TABLE IF NOT EXISTS care_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -253,6 +263,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     if "share_prompt" not in {r["name"] for r in conn.execute("PRAGMA table_info(routine_blocks)")}:
         conn.execute("ALTER TABLE routine_blocks ADD COLUMN share_prompt INTEGER NOT NULL DEFAULT 0")
         conn.execute(f"UPDATE routine_blocks SET share_prompt=1 WHERE name IN ({','.join('?' * len(SHARE_BLOCK_NAMES))})", SHARE_BLOCK_NAMES)
+    dog_cols = {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}
+    for col in ("discharged_at", "purge_after", "purged_at"):
+        if col not in dog_cols:
+            conn.execute(f"ALTER TABLE dogs ADD COLUMN {col} TEXT")
     if "consent_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}:
         conn.execute("ALTER TABLE dogs ADD COLUMN consent_at TEXT")
         # 샘플 반려견은 시연을 위해 동의를 받은 것으로 둔다(직접 등록한 반려견은 프로필에서 동의 확인 기록 필요)

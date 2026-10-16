@@ -47,7 +47,8 @@ def _unseen(db, parent, dog_id: int) -> int:
 def parent_dogs(parent=Depends(current_parent), db: sqlite3.Connection = Depends(get_db)):
     """보호자 본인에게 연결된 반려견만. 내부 정보는 포함하지 않는다."""
     return [{"id": r["id"], "name": r["name"], "breed": r["breed"], "avatar_color": r["avatar_color"], "photo": r["photo"],
-             "unseen": _unseen(db, parent, r["id"])}      # 앱 안에서만 보이는 '새 알림장' 개수(푸시 알림 아님)
+             "unseen": _unseen(db, parent, r["id"]),      # 앱 안에서만 보이는 '새 알림장' 개수(푸시 알림 아님)
+             "discharged_at": r["discharged_at"], "purge_after": r["purge_after"]}   # 퇴원 안내(삭제 예정일까지 공개된 사진을 볼 수 있음)
             for r in db.execute("SELECT d.* FROM guardian_dogs g JOIN dogs d ON d.id=g.dog_id WHERE g.account_id=? ORDER BY d.id", (parent["id"],))]
 
 

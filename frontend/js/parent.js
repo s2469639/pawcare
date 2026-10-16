@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { html, icon, fmtWhen, fmtDateKo } from './util.js';
+import { html, icon, fmtWhen, fmtDateKo, josa } from './util.js';
 import { avatar, empty, errorBox, demoSelect, guarded, openModal } from './ui.js';
 
 const thumbUrl = (id) => `/api/parent/media/${id}/file?size=thumb`;
@@ -57,6 +57,7 @@ export async function parentView({ root, me, demo, demoAccounts, logout, demoSwi
       pw.innerHTML = html`<h1>${me.name}님의 알림장</h1>
         <p class="muted" style="margin:6px 0 12px">직원이 검토하고 <b>공개 승인한 글과 사진만</b> 보입니다. 직원 내부 메모와 업무 인계 내용, 승인 전 사진은 보이지 않습니다.</p>
         <p class="callout" style="margin-bottom:14px">${totalNew ? html`<b>새 알림장 ${totalNew}건</b> · ` : ''}이 프로토타입에는 푸시·메시지 알림이 없어서, 앱(웹앱)을 열어야 새 알림장을 확인할 수 있습니다.</p>
+        ${(() => { const c = dogs.find((x) => x.id === cur); return c && c.discharged_at ? html`<p class="callout clay" style="margin-bottom:14px" role="status"><b>${josa(c.name, '은', '는')} 퇴원했어요.</b> 공개된 사진은 <b>${c.purge_after.slice(0, 10)}</b>까지 볼 수 있고, 그 뒤에는 사진·영상과 보호자 연결이 삭제됩니다. 간직하고 싶은 사진은 미리 저장해 주세요.</p>` : ''; })()}
         ${dogs.length ? html`<div class="chips" role="group" aria-label="내 반려견" style="margin-bottom:16px">${dogs.map((d) => html`<button class="chip" data-d="${d.id}" aria-pressed="${d.id === cur}">${d.name}${d.unseen ? html` <span class="n" style="opacity:1;font-weight:700">새 ${d.unseen}</span>` : ''}</button>`)}</div>` : empty('연결된 반려견이 없습니다', '유치원에 문의해 주세요.')}
         ${p ? html`<div class="feed"><div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">${avatar(p.dog)}<div><div class="serif" style="font-weight:700;font-size:20px">${p.dog.name}</div><div class="small muted">${p.dog.breed} · ${p.dog.age_text}</div></div></div>
           ${items.length ? days.map((day) => html`<h3 class="feed-day">${fmtDateKo(day)}</h3>${items.filter((x) => x.at.slice(0, 10) === day).map((x, n) => {

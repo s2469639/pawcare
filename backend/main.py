@@ -17,7 +17,8 @@ from fastapi.responses import FileResponse
 from .database import ROOT, connect, get_db, init_db, upload_dir
 from . import auth as auth_lib
 from .deps import FieldError, current_account
-from .routes import ai, auth, dogs, invites, media, misc, parent, records, routine, tasks
+from . import retention
+from .routes import ai, auth, dogs, invites, media, misc, parent, records, retention as retention_routes, routine, tasks
 from .seed import seed
 
 
@@ -39,6 +40,9 @@ async def lifespan(app: FastAPI):
         init_db(conn)
         if conn.execute("SELECT COUNT(*) FROM organizations").fetchone()[0] == 0:
             seed(conn)
+        purged = retention.purge_due(conn)       # 시작할 때 삭제 예정일이 지난 자료를 정리한다(정책: 퇴원 후 3개월)
+        if purged:
+            logging.getLogger("uvicorn.error").warning("보관 기간이 지난 반려견 %d마리의 사진·보호자 연결을 삭제했습니다: %s", len(purged), ", ".join(p["name"] for p in purged))
         if not auth_lib.demo_mode() and conn.execute("SELECT 1 FROM accounts WHERE is_demo=1").fetchone():
             logging.getLogger("uvicorn.error").warning(
                 "데모 계정이 있습니다(공개 비밀번호). 인터넷에 공개하기 전에 데모 계정을 삭제하세요. 로컬 시연은 .env의 DEMO_MODE=1을 사용하세요.")
@@ -75,7 +79,7 @@ def health():
             "ai_configured": bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"))}
 
 
-for r in (auth.router, invites.router, misc.router, parent.router, dogs.router, media.router, records.router, tasks.router, ai.router, routine.router):
+for r in (auth.router, invites.router, misc.router, parent.router, dogs.router, retention_routes.router, media.router, records.router, tasks.router, ai.router, routine.router):
     app.include_router(r)
 
 _FILE = re.compile(r"^[A-Za-z0-9._-]+\.(webp|jpg|png)$")

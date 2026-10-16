@@ -61,7 +61,9 @@ def get_task(task_id: int, staff=Depends(current_staff), db: sqlite3.Connection 
 @router.post("", status_code=201)
 def create_task(body: TaskCreate, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
     org = staff["org_id"]
-    get_dog_or_404(db, body.dog_id, org)
+    dog = get_dog_or_404(db, body.dog_id, org)
+    if not dog["attending"]:
+        raise HTTPException(409, f"{dog['name']}은(는) 퇴원 처리되어 새 업무를 만들 수 없습니다.")
     if body.source_record_id is not None:
         rec = db.execute("SELECT dog_id FROM care_records WHERE id=? AND org_id=?",
                          (body.source_record_id, org)).fetchone()

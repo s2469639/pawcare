@@ -37,7 +37,9 @@ def get_record(record_id: int, staff=Depends(current_staff), db: sqlite3.Connect
 
 @router.post("", status_code=201)
 def create_record(body: RecordCreate, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
-    get_dog_or_404(db, body.dog_id, staff["org_id"])
+    dog = get_dog_or_404(db, body.dog_id, staff["org_id"])
+    if not dog["attending"]:
+        raise HTTPException(409, f"{dog['name']}은(는) 퇴원 처리되어 새 기록을 남길 수 없습니다.")
     sv = body.structured_value
     content = body.content or (sv or "")
     if not content:

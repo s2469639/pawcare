@@ -38,14 +38,17 @@ def _parse_dogs(db, raw: Optional[str], org_id: int, default: int) -> list[int]:
     return _check_dogs(db, ids, org_id)
 
 
-def _check_dogs(db, ids: list[int], org_id: int) -> list[int]:
+def _check_dogs(db, ids: list[int], org_id: int, existing: Optional[set] = None) -> list[int]:
+    """태그할 반려견 검증. 퇴원 처리된 아이는 새로 태그할 수 없다(이미 태그된 것을 유지하는 것은 허용)."""
     ids = sorted(set(ids))
     if not ids:
         raise HTTPException(422, "사진에 찍힌 반려견을 한 마리 이상 선택해 주세요.")
     if len(ids) > 20:
         raise HTTPException(422, "한 번에 태그할 수 있는 반려견 수를 넘었습니다.")
     for i in ids:
-        get_dog_or_404(db, i, org_id)       # 다른 유치원 반려견이면 404
+        dog = get_dog_or_404(db, i, org_id)       # 다른 유치원 반려견이면 404
+        if not dog["attending"] and i not in (existing or set()):
+            raise HTTPException(409, f"{dog['name']}은(는) 퇴원 처리되어 새 사진을 태그할 수 없습니다.")
     return ids
 
 
@@ -82,6 +85,9 @@ async def upload_media(record_id: int, request: Request, dog_ids: Optional[str] 
     rec = db.execute("SELECT id, dog_id FROM care_records WHERE id=? AND org_id=?", (record_id, staff["org_id"])).fetchone()
     if rec is None:
         raise HTTPException(404, "기록을 찾을 수 없습니다.")
+    owner = db.execute("SELECT name, attending FROM dogs WHERE id=?", (rec["dog_id"],)).fetchone()
+    if not owner["attending"]:
+        raise HTTPException(409, f"{owner['name']}은(는) 퇴원 처리되어 새 사진을 올릴 수 없습니다.")
     ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
     if ctype not in TYPES:
         raise HTTPException(415, "JPG, PNG, WebP 사진만 올릴 수 있습니다.")
@@ -150,7 +156,8 @@ def media_file(media_id: int, size: str = Query("full", pattern="^(full|thumb)$"
 @router.patch("/media/{media_id}")
 def tag_media(media_id: int, body: TagBody, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
     r = _get_media(db, media_id, staff["org_id"])
-    ids = _check_dogs(db, body.dog_ids, staff["org_id"])
+    before = {x["dog_id"] for x in db.execute("SELECT dog_id FROM media_dogs WHERE media_id=?", (media_id,))}
+    ids = _check_dogs(db, body.dog_ids, staff["org_id"], existing=before)
     db.execute("DELETE FROM media_dogs WHERE media_id=?", (media_id,))
     db.executemany("INSERT INTO media_dogs(media_id,dog_id) VALUES (?,?)", [(media_id, d) for d in ids])
     # 사진에서 태그가 빠진 아이의 보호자에게는 더 이상 공개하지 않는다(공개 대상은 항상 태그된 아이의 부분집합)

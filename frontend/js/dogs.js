@@ -6,11 +6,11 @@ import { photoField, bindPhotoField } from './cropper.js';
 import { thumbs, openMediaViewer, processImage, uploadAll, MAX_PER_RECORD } from './media.js';
 
 const CTX_LABELS = [['meal', '식사 관련 주의사항'], ['sensitivity', '알레르기·민감성 정보'], ['behavior', '행동 관련 주의사항'], ['owner_request', '보호자 요청사항'], ['other', '기타 돌봄 참고사항']];
-const STATUS = [['all', '전체'], ['needs_check', '확인 필요'], ['has_task', '진행할 업무 있음'], ['clear', '열린 업무 없음']];
+const STATUS = [['all', '재원 중'], ['needs_check', '확인 필요'], ['has_task', '진행할 업무 있음'], ['clear', '열린 업무 없음'], ['discharged', '퇴원']];
 
 const dogCard = (d) => html`<a class="dog-card ${d.needs_check_count ? 'needs' : ''}" href="#/dogs/${d.id}">
   <div class="top">${avatar(d)}<div><div class="name">${d.name}</div><div class="small muted">${d.breed} · ${d.age_text}</div></div>
-    ${d.needs_check_count ? html`<span class="badge b-pending" style="margin-left:auto">${icon('clock')} 확인 ${d.needs_check_count}</span>` : ''}</div>
+    ${d.discharged ? html`<span class="badge b-done" style="margin-left:auto">${d.purged_at ? '자료 삭제됨' : `퇴원 · 삭제 D-${Math.max(d.purge_days_left ?? 0, 0)}`}</span>` : d.needs_check_count ? html`<span class="badge b-pending" style="margin-left:auto">${icon('clock')} 확인 ${d.needs_check_count}</span>` : ''}</div>
   <div class="row"><b>오늘</b><span>${d.today_status ? html`${d.today_status.record_type} · ${fmtTime(d.today_status.observed_at)} ${d.today_status.structured_value && d.today_status.structured_value !== '직접 입력' ? d.today_status.structured_value : d.today_status.content.slice(0, 36)}` : '오늘 기록 없음'}</span></div>
   <div class="row"><b>업무</b><span>${d.open_task_count ? `진행할 업무 ${d.open_task_count}건` : '열린 업무 없음'}</span></div>
   <div class="row"><b>주의</b><span>${d.caution ? html`${icon('shield')} ${d.caution}` : '등록된 주의사항 없음'}</span></div></a>`;
@@ -21,7 +21,7 @@ export async function dogsView(ctx) {
   root.innerHTML = html`<div class="page-head"><div><h1>반려견</h1><p>오늘 돌봄 중인 반려견을 찾고 프로필로 이동합니다.</p></div><button class="btn" id="add-dog">${icon('plus')} 반려견 등록</button></div>
     <div class="toolbar"><label class="sr" for="q">이름 검색</label><input id="q" class="input search" type="search" placeholder="이름으로 검색" autocomplete="off">
     <div class="chips" role="group" aria-label="상태 필터">${STATUS.map(([k, l]) => html`<button class="chip" data-s="${k}" aria-pressed="${k === 'all'}">${l}</button>`)}</div></div>
-    <div id="grid" class="dog-grid" aria-live="polite"></div>`.toString();
+    <div id="purge-panel"></div><div id="grid" class="dog-grid" aria-live="polite"></div>`.toString();
   const grid = root.querySelector('#grid');
   root.querySelector('#add-dog').addEventListener('click', () => registerDogModal(ctx));
   let seq = 0;
@@ -30,7 +30,8 @@ export async function dogsView(ctx) {
     try {
       const dogs = await api.dogs({ q, status });
       if (my !== seq) return;
-      grid.innerHTML = (dogs.length ? dogs.map(dogCard) : [empty('조건에 맞는 반려견이 없습니다', '검색어나 필터를 바꿔 보세요.')]).join('');
+      grid.innerHTML = (dogs.length ? dogs.map(dogCard) : [empty(status === 'discharged' ? '퇴원 처리된 반려견이 없습니다' : '조건에 맞는 반려견이 없습니다', status === 'discharged' ? '' : '검색어나 필터를 바꿔 보세요.')]).join('');
+      await paintPurgePanel(ctx, root.querySelector('#purge-panel'), status === 'discharged', load);
     } catch (e) { grid.innerHTML = `<div class="errbox" role="alert">${e.message}</div>`; }
   };
   let t;
@@ -54,8 +55,11 @@ export async function dogDetailView(ctx) {
     <div class="card"><div class="dog-head">${avatar(d, 'lg')}
       <div class="grow"><h1>${d.name}</h1><p class="muted">${d.breed} · ${d.age_text} · 보호자 ${d.owner_name} <span class="tiny">(샘플)</span></p>
         <p style="margin-top:6px">${open.length ? html`<span class="badge b-todo">진행할 업무 ${open.length}건</span>` : html`<span class="badge b-done">열린 업무 없음</span>`} ${d.consent_at ? '' : html`<span class="badge b-pending">${icon('lock')} 동의 미확인 · 공개 불가</span>`}</p></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="#/record/new?dog=${d.id}">${icon('pen')} 돌봄 기록 작성</a>
-        <button class="btn secondary" id="goto-tasks">후속 업무 확인 (${open.length})</button><button class="btn secondary" id="edit">프로필 수정</button></div></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${d.attending ? html`<a class="btn" href="#/record/new?dog=${d.id}">${icon('pen')} 돌봄 기록 작성</a>` : html`<button class="btn" disabled title="퇴원 처리된 반려견에는 새 기록을 남길 수 없습니다">${icon('pen')} 돌봄 기록 작성</button>`}
+        <button class="btn secondary" id="goto-tasks">후속 업무 확인 (${open.length})</button><button class="btn secondary" id="edit">프로필 수정</button>
+        ${staff.role === '관리자' ? (d.attending ? html`<button class="btn ghost" id="discharge">퇴원 처리</button>` : (d.discharged && !d.purged_at ? html`<button class="btn ghost" id="readmit">재입원 처리</button>` : '')) : ''}</div></div></div>
+    ${d.purged_at ? html`<p class="callout clay" style="margin-top:12px" role="status"><b>자료 삭제 완료</b> · ${fmtWhen(d.purged_at)}에 사진·영상 파일과 보호자 연결을 삭제했습니다. 글 기록과 업무 이력은 남아 있습니다.</p>`
+      : d.discharged ? html`<p class="callout clay" style="margin-top:12px" role="status"><b>퇴원 처리됨</b> (${fmtWhen(d.discharged_at)}) · 사진·영상 파일과 보호자 연결은 <b>${d.purge_after.slice(0, 10)}</b>(D-${d.purge_days_left})에 삭제될 예정입니다. 그때까지 보호자는 이미 공개된 사진을 볼 수 있어요.</p>` : ''}
 
     <section class="section"><div class="head"><h2>지속적으로 확인해야 할 돌봄 정보</h2></div>
       <p class="callout" style="margin-bottom:10px">장기 참고사항입니다. 오늘의 기록과 구분되며, 직원이 직접 입력한 내용만 담기고 AI가 자동으로 바꾸지 않습니다. (샘플 데이터)</p>
@@ -68,7 +72,7 @@ export async function dogDetailView(ctx) {
         ${thumbs(r.media, r.id)}
         <div class="tags">${r.tasks.map((t) => html`<a class="link-task" href="#/tasks/${t.id}">${icon('list')} ${t.title} · ${t.acknowledgment_status === 'pending' ? '확인 대기' : '확인 완료'} / ${{ todo: '조치 필요', in_progress: '진행 중', completed: '조치 완료' }[t.action_status]}</a>`)}
           ${r.tasks.length ? '' : html`<a class="btn sm secondary" href="#/ai/${r.id}">${icon('spark')} 후속 업무 제안</a>`}
-          ${r.media.length < MAX_PER_RECORD ? html`<button class="btn sm ghost" data-add-photo="${r.id}">${icon('plus')} 사진 추가</button>` : ''}${r.parent_status === 'approved' ? html`<span class="badge b-ack">${icon('check')} 보호자 공개됨${r.media.some((m) => m.shared_dog_ids.length) ? ` · 사진 ${r.media.filter((m) => m.shared_dog_ids.length).length}장` : ''}</span><button class="btn sm ghost" data-approve="${r.id}">공개 내용 수정</button><button class="btn sm ghost" data-revoke="${r.id}">공개 취소</button>` : html`<span class="badge b-private">${icon('lock')} 내부 기록</span><button class="btn sm ghost" data-approve="${r.id}">보호자 공개 승인…</button>`}</div></div></li>`)}</ul>`
+          ${r.media.length < MAX_PER_RECORD && d.attending ? html`<button class="btn sm ghost" data-add-photo="${r.id}">${icon('plus')} 사진 추가</button>` : ''}${r.parent_status === 'approved' ? html`<span class="badge b-ack">${icon('check')} 보호자 공개됨${r.media.some((m) => m.shared_dog_ids.length) ? ` · 사진 ${r.media.filter((m) => m.shared_dog_ids.length).length}장` : ''}</span><button class="btn sm ghost" data-approve="${r.id}">공개 내용 수정</button><button class="btn sm ghost" data-revoke="${r.id}">공개 취소</button>` : html`<span class="badge b-private">${icon('lock')} 내부 기록</span><button class="btn sm ghost" data-approve="${r.id}">보호자 공개 승인…</button>`}</div></div></li>`)}</ul>`
         : html`<div style="padding:14px 0">${empty('오늘 작성된 기록이 없습니다', '', html`<br><a class="btn" href="#/record/new?dog=${d.id}">돌봄 기록 작성</a>`)}</div>`}</div></section>
 
     <section class="section" id="dog-photos" aria-labelledby="photos-title"><div class="head"><h2 id="photos-title">오늘 찍힌 사진</h2><span class="small muted">${tagged.length}장 · 직원만 볼 수 있어요</span></div>
@@ -91,6 +95,11 @@ export async function dogDetailView(ctx) {
 
   root.querySelector('#goto-tasks').addEventListener('click', () => root.querySelector('#dog-tasks').scrollIntoView({ behavior: 'smooth' }));
   root.querySelector('#edit').addEventListener('click', () => profileModal(ctx, d));
+  root.querySelector('#discharge')?.addEventListener('click', () => dischargeModal(ctx, d, open.length));
+  root.querySelector('#readmit')?.addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
+    if (!confirm(`${josa(d.name, '을', '를')} 재입원 처리할까요? 삭제 예정이 취소되고 다시 기록·사진을 남길 수 있습니다.`)) return;
+    await api.readmit(d.id); toast(`${josa(d.name, '을', '를')} 재입원 처리했습니다.`); ctx.rerender();
+  })));
   root.querySelector('#consent')?.addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
     if (!confirm('보호자에게 사진 공유와 퇴원 후 3개월 뒤 삭제에 대한 동의를 받았나요? 확인하면 동의 확인 시각이 기록됩니다.')) return;
     await api.recordConsent(d.id); toast('보호자 동의 확인을 기록했습니다.'); ctx.rerender();
@@ -257,5 +266,51 @@ function inviteModal(ctx, inv) {
       });
     },
     onClose: () => ctx.rerender(),
+  });
+}
+
+/** '퇴원' 필터에서 보이는 삭제 예정 현황과(관리자) 삭제 대상 정리 실행 */
+async function paintPurgePanel(ctx, el, show, reload) {
+  if (!show) { el.innerHTML = ''; return; }
+  const list = await api.discharged();
+  const due = list.filter((x) => x.due);
+  const admin = ctx.staff.role === '관리자';
+  el.innerHTML = html`<div class="card" style="margin-bottom:14px"><h3>삭제 예정 현황</h3>
+    <p class="small muted" style="margin:4px 0 8px">퇴원 처리 후 <b>3개월</b>이 지나면 사진·영상 파일과 보호자 연결이 삭제됩니다. 글 기록과 업무 이력은 남습니다. 삭제는 되돌릴 수 없습니다.</p>
+    ${list.length ? html`<ul class="timeline">${list.map((x) => html`<li style="grid-template-columns:1fr auto;align-items:center"><div><b>${x.name}</b> <span class="small muted">퇴원 ${fmtWhen(x.discharged_at)} · 삭제 예정 ${x.purge_after.slice(0, 10)}</span></div>
+      <span class="badge ${x.purged_at ? 'b-done' : x.due ? 'b-pending' : 'b-todo'}">${x.purged_at ? '자료 삭제 완료' : x.due ? '삭제 기한 지남' : `D-${x.purge_days_left}`}</span></li>`)}</ul>` : html`<p class="muted small">퇴원 처리된 반려견이 없습니다.</p>`}
+    ${due.length ? html`<div style="margin-top:10px"><button class="btn clay" id="purge" ${admin ? '' : 'disabled'}>삭제 대상 정리 실행 (${due.length}마리)</button> ${admin ? '' : html`<span class="small muted">관리자만 실행할 수 있어요.</span>`}</div>` : ''}</div>`.toString();
+  el.querySelector('#purge')?.addEventListener('click', (e) => {
+    if (!confirm(`삭제 기한이 지난 ${due.length}마리(${due.map((x) => x.name).join(', ')})의 사진·영상 파일과 보호자 연결을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?`)) return;
+    busy(e.currentTarget, () => guarded(async () => {
+      const r = await api.purge();
+      toast(`${r.count}마리의 자료를 삭제했습니다.`);
+      await reload();
+    }));
+  });
+}
+
+/** 퇴원 처리(관리자) */
+function dischargeModal(ctx, d, openTasks) {
+  openModal({
+    title: `${d.name} 퇴원 처리`,
+    body: html`<form class="stack" novalidate>
+      <p class="callout clay"><b>퇴원 처리하면 다음과 같이 바뀝니다.</b></p>
+      <ul class="small" style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px">
+        <li>새 돌봄 기록·사진·업무를 만들 수 없고, 새로 보호자에게 공개할 수도 없습니다.</li>
+        <li>이미 공개된 사진은 보호자가 <b>삭제 예정일까지</b> 계속 볼 수 있습니다.</li>
+        <li><b>퇴원 3개월 뒤</b> 이 아이의 사진·영상 파일과 보호자 연결이 삭제됩니다. 글 기록과 업무 이력은 남습니다.</li>
+        <li>삭제 전에는 "재입원 처리"로 되돌릴 수 있고, 삭제된 뒤에는 되돌릴 수 없습니다.</li>
+        ${openTasks ? html`<li>아직 끝나지 않은 업무가 <b>${openTasks}건</b> 있습니다. 필요하면 먼저 처리해 주세요.</li>` : ''}</ul>
+      <label class="check consent-check"><input type="checkbox" name="ok"> 위 내용을 확인했고, 보호자에게 사전에 동의를 받았음을 확인합니다.</label>
+      <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn clay" type="submit">퇴원 처리</button></div></form>`.toString(),
+    onMount(el, close) {
+      const f = el.querySelector('form');
+      f.addEventListener('submit', (e) => {
+        e.preventDefault(); fieldErrors(f, { errors: [] });
+        if (!f.ok.checked) { showFieldError(f, 'ok', '내용을 확인했다면 체크해 주세요.'); return; }
+        busy(f.querySelector('[type=submit]'), () => guarded(async () => { await api.discharge(d.id); close(); toast(`${josa(d.name, '을', '를')} 퇴원 처리했습니다.`); ctx.rerender(); }));
+      });
+    },
   });
 }

@@ -55,4 +55,8 @@ def dog_dict(r) -> dict:
     d["care_context"] = json.loads(d["care_context"] or "{}")
     d["attending"] = bool(d["attending"])
     d["age_text"] = age_text(d["birth_date"])
+    d["discharged"] = bool(d.get("discharged_at"))
+    d["purge_days_left"] = None
+    if d.get("purge_after") and not d.get("purged_at"):
+        d["purge_days_left"] = (date.fromisoformat(d["purge_after"][:10]) - datetime.now(KST).date()).days
     return d

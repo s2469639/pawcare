@@ -5,7 +5,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from ..database import get_db, now_iso, upload_dir
+from ..retention import RETENTION_MONTHS
+
+from datetime import datetime
+
+from ..database import add_months, get_db, now_iso, upload_dir
 from ..deps import current_staff, get_dog_or_404
 from ..schemas import DogCreate, DogPatch
 from .common import TASK_SELECT, dog_dict, task_dict, today_prefix
@@ -30,11 +34,11 @@ def _record_view(db, org_id: int, dog_id: int, scope: str):
 
 
 @router.get("")
-def list_dogs(q: str = "", status: str = Query("all", pattern="^(all|needs_check|has_task|clear)$"),
+def list_dogs(q: str = "", status: str = Query("all", pattern="^(all|needs_check|has_task|clear|discharged)$"),
               staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
     dogs = []
-    for r in db.execute("SELECT * FROM dogs WHERE org_id=? AND name LIKE ? ORDER BY id",
-                        (staff["org_id"], f"%{q.strip()}%")):
+    for r in db.execute("SELECT * FROM dogs WHERE org_id=? AND name LIKE ? AND (discharged_at IS NOT NULL) = ? ORDER BY id",
+                        (staff["org_id"], f"%{q.strip()}%", 1 if status == "discharged" else 0)):
         d = dog_dict(r)
         counts = db.execute(
             "SELECT SUM(acknowledgment_status='pending' AND action_status!='completed') AS pend,"
@@ -163,4 +167,37 @@ def record_consent(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connec
     dog = get_dog_or_404(db, dog_id, staff["org_id"])
     if not dog["consent_at"]:
         db.execute("UPDATE dogs SET consent_at=? WHERE id=?", (now_iso(), dog_id))
+    return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())
+
+
+def require_admin(staff: dict) -> None:
+    if staff["role"] != "관리자":
+        raise HTTPException(403, "관리자만 할 수 있는 작업입니다.")
+
+
+@router.post("/{dog_id}/discharge")
+def discharge_dog(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
+    """퇴원 처리(관리자). 새 기록·사진·공개가 막히고, 3개월 뒤 사진·영상 파일과 보호자 연결이 삭제될 예정이 된다."""
+    require_admin(staff)
+    dog = get_dog_or_404(db, dog_id, staff["org_id"])
+    if dog["purged_at"]:
+        raise HTTPException(409, "이미 자료가 삭제된 반려견입니다.")
+    if dog["discharged_at"]:
+        raise HTTPException(409, "이미 퇴원 처리된 반려견입니다.")
+    now = datetime.fromisoformat(now_iso())
+    db.execute("UPDATE dogs SET discharged_at=?, purge_after=?, attending=0 WHERE id=?",
+               (now.isoformat(), add_months(now, RETENTION_MONTHS).isoformat(), dog_id))
+    return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())
+
+
+@router.post("/{dog_id}/readmit")
+def readmit_dog(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
+    """재입원 처리(관리자). 자료가 삭제되기 전에만 가능하다."""
+    require_admin(staff)
+    dog = get_dog_or_404(db, dog_id, staff["org_id"])
+    if dog["purged_at"]:
+        raise HTTPException(409, "자료가 이미 삭제되어 재입원 처리로 되돌릴 수 없습니다. 새 반려견으로 등록해 주세요.")
+    if not dog["discharged_at"]:
+        raise HTTPException(409, "퇴원 처리된 반려견이 아닙니다.")
+    db.execute("UPDATE dogs SET discharged_at=NULL, purge_after=NULL, attending=1 WHERE id=?", (dog_id,))
     return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())

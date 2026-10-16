@@ -460,8 +460,7 @@ with sync_playwright() as p:
     assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 404
     switch_to("오전 담당자 · 한지우", "오늘의 업무")
     page.goto(f"{BASE}/#/dogs/1")
-    page.once("dialog", lambda d: d.accept())
-    page.get_by_role("button", name="공개 취소").first.click()
+    page.get_by_role("button", name="공개 취소").first.click()                             # 확인창 없이 바로 취소
     switch_to("보호자 · 박도윤 (두부)", "박도윤님의 알림장")
     expect(page.get_by_text("공개된 알림장이 없습니다")).to_be_visible()                       # 취소하면 바로 사라진다
     assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 404
@@ -501,6 +500,39 @@ with sync_playwright() as p:
     page.locator(".rblock", has_text="오전 교육·놀이").click()                                  # 사진 공유 시점이 아닌 구간에는 현황 카드가 없다
     expect(page.locator("#bt")).to_contain_text("오전 교육·놀이"); expect(page.locator(".share-card")).to_have_count(0)
     step("사진 공유 시점: 점심 구간에서 공개 전 사진이 있는 아이 확인 → 공개 승인 → 구간 현황(공개 N/M마리) 갱신, 다른 구간엔 현황 없음")
+
+    # 10-h. M6: 퇴원 처리(관리자) → 보호자 안내 → 재입원
+    page.goto(f"{BASE}/#/dogs/3"); expect(page.get_by_role("heading", name="모카", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="퇴원 처리")).to_have_count(0)                      # 관리자가 아니면 퇴원 처리 버튼이 없다
+    pick("관리자 · 정하은")                                                                       # 직원끼리 전환하면 현재 화면에 머문다
+    expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()
+    page.get_by_role("button", name="퇴원 처리").click()
+    expect(page.locator(".modal")).to_contain_text("퇴원 3개월 뒤")
+    page.locator(".modal").get_by_role("button", name="퇴원 처리", exact=True).click()           # 확인 체크 없이는 진행되지 않음
+    expect(page.locator(".modal")).to_be_visible()
+    page.locator(".modal input[name=ok]").check(); shot("32-discharge-modal")
+    page.locator(".modal").get_by_role("button", name="퇴원 처리", exact=True).click()
+    expect(page.get_by_text("퇴원 처리됨").first).to_be_visible(); settle()
+    expect(page.locator("#view")).to_contain_text("삭제될 예정입니다")
+    expect(page.get_by_role("button", name="돌봄 기록 작성")).to_be_disabled()                  # 새 기록 불가
+    shot("33-discharged-profile")
+    page.goto(f"{BASE}/#/dogs"); expect(page.locator(".dog-card", has_text="모카")).to_have_count(0)   # 재원 중 목록에서는 사라짐
+    page.get_by_role("button", name="퇴원", exact=True).click()
+    expect(page.locator(".dog-card", has_text="모카")).to_have_count(1)
+    expect(page.locator("#purge-panel")).to_contain_text("삭제 예정 현황")
+    expect(page.get_by_role("button", name="삭제 대상 정리 실행")).to_have_count(0)               # 아직 기한이 지나지 않았으므로 정리할 대상이 없다
+    shot("34-purge-panel")
+    switch_to("보호자 · 이수아 (모카)", "이수아님의 알림장")                                       # 보호자에게는 삭제 예정일 안내가 보이고, 공개된 내용은 아직 볼 수 있다
+    expect(page.locator("#pw")).to_contain_text("퇴원했어요"); expect(page.locator(".feed")).to_contain_text("신나게")
+    shot("35-parent-discharged")
+    switch_to("관리자 · 정하은", "오늘의 업무")
+    page.goto(f"{BASE}/#/dogs/3")
+    page.once("dialog", lambda d: d.accept())
+    page.get_by_role("button", name="재입원 처리").click()
+    expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()                           # 재입원: 다시 정상
+    expect(page.get_by_role("link", name="돌봄 기록 작성").first).to_be_visible()
+    pick("오전 담당자 · 한지우")
+    step("퇴원 처리: 관리자만, 확인 체크 필수, 새 기록 차단·목록에서 숨김·삭제 예정 현황, 보호자 안내(공개된 내용은 유지), 재입원으로 복구")
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
