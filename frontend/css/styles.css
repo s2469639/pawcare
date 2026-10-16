@@ -231,6 +231,9 @@ hr.sep { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 .flow span.step { border: 1px solid var(--border); background: var(--white); border-radius: 99px; padding: 4px 12px; }
 .landing .fine { margin-top: auto; padding-top: 36px; color: var(--gray); font-size: 12.5px; text-align: center; max-width: 560px; }
 .parent-wrap { max-width: 760px; margin: 0 auto; padding: 28px 20px 56px; }
+.feed { max-width: 560px; }
+.feed-day { margin: 18px 0 8px; font-size: 14px; color: var(--gray); font-family: var(--sans); font-weight: 700; }
+.feed-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--r); padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
 .phone { max-width: 380px; margin: 0 auto; background: var(--white); border: 1px solid #cfccc0; border-radius: 28px; padding: 22px 18px; box-shadow: var(--shadow); }
 .phone .rec { border-top: 1px solid var(--border); padding: 12px 0; }
 
@@ -270,6 +273,14 @@ details > summary { cursor: pointer; }
 .viewer { margin: 0; text-align: center; }
 .viewer img { max-width: 100%; max-height: 62vh; border-radius: 12px; background: var(--paper); }
 .viewer figcaption { margin-top: 6px; }
+/* ---------- share ---------- */
+.share-list { display: flex; flex-direction: column; gap: 10px; }
+.share-row { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--r); padding: 10px; background: var(--white); }
+.share-row img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; flex: none; }
+.checks { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.check input { margin-top: 4px; width: 16px; height: 16px; accent-color: var(--ink); flex: none; }
+.consent-check { background: var(--sage-tint); border: 1px solid #cdd5c1; border-radius: var(--r); padding: 10px 12px; }
 /* ---------- auth ---------- */
 .auth-wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 8vh 16px 32px; gap: 20px; }
 .auth-card { width: 100%; max-width: 440px; }

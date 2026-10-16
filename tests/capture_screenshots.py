@@ -54,7 +54,7 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/tasks"); expect(page.locator(".task-row").first).to_be_visible(); shot("11-task-handoff-list", True)
 
     page.locator("#who").select_option(label="보호자 · 이수아 (모카)")                      # 데모 계정 전환 → 보호자 화면
-    expect(page.locator(".phone")).to_contain_text("신나게"); shot("12-parent-preview")
+    expect(page.locator(".feed")).to_contain_text("신나게"); shot("12-parent-preview")
     page.locator("#who").select_option(label="오후 담당자 · 서민재")
     expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
@@ -94,6 +94,19 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/dogs/1"); expect(page.locator(".timeline").first.locator(".thumb")).to_have_count(2); shot("26-dog-photos", True)
     page.locator(".timeline").first.locator(".thumb").first.click(); expect(page.locator(".viewer img")).to_be_visible()
     page.wait_for_timeout(500); shot("25-photo-viewer"); page.keyboard.press("Escape")
+
+    # 공개 승인(사진별 공개 대상) → 보호자 알림장
+    page.locator(".timeline").first.locator("li").first.get_by_role("button", name="보호자 공개 승인…").click()
+    expect(page.locator(".share-row")).to_have_count(2)
+    page.locator(".share-row").nth(0).get_by_label("두부의 보호자").check(); shot("27-share-modal")
+    page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
+    expect(page.locator(".timeline").first).to_contain_text("보호자 공개됨")
+    page.locator("#who").select_option(label="보호자 · 김서연 (보리)")
+    expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible(); expect(page.locator(".feed .thumb")).to_have_count(2)
+    page.wait_for_timeout(500); shot("28-parent-feed", True)
+    page.locator(".feed .thumb").first.click(); expect(page.locator(".viewer img")).to_be_visible(); page.wait_for_timeout(500); shot("29-parent-viewer"); page.keyboard.press("Escape")
+    page.locator("#who").select_option(label="오후 담당자 · 서민재")
+    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
 
     # 로그인 · 보호자 초대 · 가입
     page.goto(f"{BASE}/#/dogs/4"); page.get_by_role("button", name="초대 코드 만들기").click()

@@ -31,6 +31,23 @@ with sync_playwright() as p:
     errors = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" and "fonts.g" not in m.text and "ERR_" not in m.text else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
+    # 앱의 fetch 요청 수를 세어 화면 전환(SPA)이 끝났는지 판단한다. (Playwright의 networkidle은 해시 이동으로 시작된 새 요청을 기다려 주지 않는다)
+    page.add_init_script("""(() => { const f = window.fetch; window.__pending = 0; window.__lastNet = Date.now();
+      window.fetch = (...a) => { window.__pending++; return f(...a).finally(() => { window.__pending--; window.__lastNet = Date.now(); }); }; })()""")
+
+    def settle():
+        page.wait_for_function("window.__pending === 0 && Date.now() - window.__lastNet > 350", timeout=15000)
+
+    def pick(label):
+        """데모 계정 전환. 전환 전후로 진행 중인 요청이 없을 때까지 기다린다 — 로딩 중이던 이전 화면의 요청이 새 세션으로 나가는 것을 피한다."""
+        settle()
+        page.locator("#who").select_option(label=label)
+        settle()
+
+    def switch_to(label, heading):
+        pick(label)
+        expect(page.get_by_role("heading", name=heading)).to_be_visible()
+        settle()
     shot = lambda n: page.screenshot(path=f"{SHOTS}/{n}.png", full_page=True)
 
     # 1. 역할 선택 → 대시보드
@@ -110,7 +127,7 @@ with sync_playwright() as p:
 
     # 5. 담당자 확인 (오전 담당자로는 처리 불가 → 오후 담당자로 전환)
     expect(page.locator("#ack")).to_be_disabled()
-    page.locator("#who").select_option(label="오후 담당자 · 서민재")
+    pick("오후 담당자 · 서민재")
     expect(page.locator("#ack")).to_be_enabled()
     expect(page.locator(".statebox")).to_contain_text("확인 대기")
     page.locator("#ack").click()
@@ -180,17 +197,17 @@ with sync_playwright() as p:
     page.get_by_role("button", name="보호자 공개 승인…").first.click()
     page.get_by_label("보호자에게 보여줄 문구 *").fill("오늘 점심은 조금 적게 먹었지만 컨디션을 살피고 있어요.")
     page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
-    expect(page.get_by_text("보호자 공개 승인됨")).to_be_visible()
-    page.locator("#who").select_option(label="보호자 · 김서연 (보리)")                  # 데모 계정 전환 → 보호자 화면
+    expect(page.get_by_text("보호자 공개됨").first).to_be_visible()
+    pick("보호자 · 김서연 (보리)")                  # 데모 계정 전환 → 보호자 화면
     expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
     expect(page.get_by_text("공개 승인된 기록이 없습니다")).to_have_count(0)
-    expect(page.locator(".phone")).to_contain_text("컨디션을 살피고")
-    expect(page.locator(".phone")).not_to_contain_text("오후 담당자")
+    expect(page.locator(".feed")).to_contain_text("컨디션을 살피고")
+    expect(page.locator(".feed")).not_to_contain_text("오후 담당자")
     expect(page.locator(".chips [data-d]")).to_have_count(1)                            # 자기 아이(보리)만
     shot("12-parent")
     page.goto(f"{BASE}/#/dogs")                                                          # 보호자는 직원 화면에 들어갈 수 없음
     expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
-    page.locator("#who").select_option(label="오후 담당자 · 서민재")                       # 다시 직원으로
+    pick("오후 담당자 · 서민재")                       # 다시 직원으로
     expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
     step("보호자 화면: 자기 아이의 승인된 문구만 표시, 직원 화면 접근 차단")
 
@@ -401,17 +418,59 @@ with sync_playwright() as p:
     step("사진 뷰어: 태그 수정이 다른 아이 프로필에 반영, 기록에 사진 추가, 삭제")
 
     # 보호자는 아직 사진을 볼 수 없다(공개 승인 기능 전)
-    page.locator("#who").select_option(label="보호자 · 김서연 (보리)")
-    expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
+    switch_to("보호자 · 김서연 (보리)", "김서연님의 알림장")
     assert page.request.get(f"{BASE}/api/media/{mine['media'][0]['id']}/file").status == 403
     assert page.request.get(f"{BASE}/api/records").status == 403
-    page.locator("#who").select_option(label="오전 담당자 · 한지우")
-    expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible()
+    switch_to("오전 담당자 · 한지우", "오늘의 업무")
     step("보호자 계정은 첨부 사진·기록 API 접근 불가")
+
+    # 10-f. M3·M4: 사진 공개 승인 → 보호자 알림장
+    recs = page.request.get(f"{BASE}/api/records").json()
+    rec = next(r for r in recs if len(r["media"]) == 2)
+    ma, mb = rec["media"][0]["id"], rec["media"][1]["id"]                               # ma: 보리·두부, mb: 보리
+    page.goto(f"{BASE}/#/dogs/1")
+    page.get_by_role("button", name="보호자 공개 승인…").first.click()
+    expect(page.locator(".share-row")).to_have_count(2)
+    expect(page.locator(".share-row").nth(0).get_by_label("보리의 보호자")).to_be_checked()      # 기본: 기록의 아이만
+    expect(page.locator(".share-row").nth(0).get_by_label("두부의 보호자")).not_to_be_checked()
+    page.locator(".share-row").nth(0).get_by_label("두부의 보호자").check()                       # 단체 사진은 직원이 직접 추가 선택
+    page.locator(".share-row").nth(1).get_by_label("보리의 보호자").uncheck()                     # 두 번째 사진은 공개하지 않음
+    shot("27-share-modal")
+    page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
+    expect(page.locator(".timeline").first).to_contain_text("보호자 공개됨 · 사진 1장")
+    switch_to("보호자 · 김서연 (보리)", "김서연님의 알림장")
+    expect(page.locator(".feed .thumb")).to_have_count(1)                                 # 선택한 사진 한 장만
+    expect(page.locator(".feed-card").first).to_contain_text("새 알림장")
+    expect(page.locator(".chips [data-d]")).to_contain_text("새 1")
+    shot("28-parent-feed")
+    assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 200
+    assert page.request.get(f"{BASE}/api/parent/media/{mb}/file").status == 404          # 선택하지 않은 사진
+    page.locator(".feed .thumb").first.click()
+    expect(page.locator(".viewer img")).to_be_visible(); expect(page.get_by_role("link", name="사진 저장")).to_be_visible()
+    shot("29-parent-viewer"); page.keyboard.press("Escape")
+    page.wait_for_timeout(600); page.reload()                                            # 열어 봤으니 다음에는 '새' 표시가 없다
+    expect(page.get_by_role("heading", name="김서연님의 알림장")).to_be_visible()
+    expect(page.locator(".feed-card").first).not_to_contain_text("새 알림장"); expect(page.locator(".chips [data-d]")).not_to_contain_text("새")
+    switch_to("보호자 · 박도윤 (두부)", "박도윤님의 알림장")                                   # 함께 찍힌 두부의 보호자
+    expect(page.locator(".feed-card")).to_have_count(1)
+    expect(page.locator(".feed-card").first).to_contain_text("친구들과 함께 찍힌 사진")
+    expect(page.locator(".feed")).not_to_contain_text("사진을 남깁니다")                       # 보리 기록의 글은 보이지 않는다
+    assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 200
+    switch_to("보호자 · 이수아 (모카)", "이수아님의 알림장")                                   # 태그되지 않은 아이의 보호자
+    assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 404
+    switch_to("오전 담당자 · 한지우", "오늘의 업무")
+    page.goto(f"{BASE}/#/dogs/1")
+    page.once("dialog", lambda d: d.accept())
+    page.get_by_role("button", name="공개 취소").first.click()
+    switch_to("보호자 · 박도윤 (두부)", "박도윤님의 알림장")
+    expect(page.get_by_text("공개된 알림장이 없습니다")).to_be_visible()                       # 취소하면 바로 사라진다
+    assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 404
+    switch_to("오전 담당자 · 한지우", "오늘의 업무")
+    step("공개 승인: 사진별 공개 대상 선택(단체 사진은 직접 추가), 보호자에게 선택한 사진만·새 알림장 표시, 단체 사진엔 글 미노출, 취소하면 즉시 사라짐")
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
-    page.locator("#who").select_option(label="관리자 · 오하준")
+    pick("관리자 · 오하준")
     expect(page.locator(".task-row")).to_have_count(1)
     expect(page.locator(".task-row")).to_contain_text("구름")
     step("다른 유치원 직원은 자기 회사 데이터만 봄")
@@ -419,7 +478,7 @@ with sync_playwright() as p:
     # 12. 좁은 화면
     page.set_viewport_size({"width": 390, "height": 800})
     page.goto(f"{BASE}/#/dashboard")
-    page.locator("#who").select_option(label="오후 담당자 · 서민재") if False else None
+    pick("오후 담당자 · 서민재") if False else None
     shot("13-mobile")
     overflow = page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
     assert not overflow, "모바일 가로 스크롤 발생"

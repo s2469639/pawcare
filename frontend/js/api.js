@@ -45,6 +45,8 @@ export const api = {
   dogMedia: (dogId, scope = 'today') => request('GET', `/api/dogs/${dogId}/media?scope=${scope}`),
   tagMedia: (id, dog_ids) => request('PATCH', `/api/media/${id}`, { dog_ids }),
   deleteMedia: (id) => request('DELETE', `/api/media/${id}`),
+  recordConsent: (id) => request('POST', `/api/dogs/${id}/consent`),
+  markSeen: (dogId) => request('POST', `/api/parent/dogs/${dogId}/seen`),
   routine: () => request('GET', '/api/routine'),
   routineBlock: (id) => request('GET', `/api/routine/${id}`),
   records: (params = {}) => request('GET', `/api/records${q(params)}`),

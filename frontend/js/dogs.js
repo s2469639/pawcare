@@ -53,7 +53,7 @@ export async function dogDetailView(ctx) {
     <a class="crumb" href="#/dogs">${icon('back')} 반려견 목록</a>
     <div class="card"><div class="dog-head">${avatar(d, 'lg')}
       <div class="grow"><h1>${d.name}</h1><p class="muted">${d.breed} · ${d.age_text} · 보호자 ${d.owner_name} <span class="tiny">(샘플)</span></p>
-        <p style="margin-top:6px">${open.length ? html`<span class="badge b-todo">진행할 업무 ${open.length}건</span>` : html`<span class="badge b-done">열린 업무 없음</span>`}</p></div>
+        <p style="margin-top:6px">${open.length ? html`<span class="badge b-todo">진행할 업무 ${open.length}건</span>` : html`<span class="badge b-done">열린 업무 없음</span>`} ${d.consent_at ? '' : html`<span class="badge b-pending">${icon('lock')} 동의 미확인 · 공개 불가</span>`}</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="#/record/new?dog=${d.id}">${icon('pen')} 돌봄 기록 작성</a>
         <button class="btn secondary" id="goto-tasks">후속 업무 확인 (${open.length})</button><button class="btn secondary" id="edit">프로필 수정</button></div></div></div>
 
@@ -68,7 +68,7 @@ export async function dogDetailView(ctx) {
         ${thumbs(r.media, r.id)}
         <div class="tags">${r.tasks.map((t) => html`<a class="link-task" href="#/tasks/${t.id}">${icon('list')} ${t.title} · ${t.acknowledgment_status === 'pending' ? '확인 대기' : '확인 완료'} / ${{ todo: '조치 필요', in_progress: '진행 중', completed: '조치 완료' }[t.action_status]}</a>`)}
           ${r.tasks.length ? '' : html`<a class="btn sm secondary" href="#/ai/${r.id}">${icon('spark')} 후속 업무 제안</a>`}
-          ${r.media.length < MAX_PER_RECORD ? html`<button class="btn sm ghost" data-add-photo="${r.id}">${icon('plus')} 사진 추가</button>` : ''}${r.parent_status === 'approved' ? html`<span class="badge b-ack">${icon('check')} 보호자 공개 승인됨</span><button class="btn sm ghost" data-revoke="${r.id}">공개 취소</button>` : html`<span class="badge b-private">${icon('lock')} 내부 기록</span><button class="btn sm ghost" data-approve="${r.id}">보호자 공개 승인…</button>`}</div></div></li>`)}</ul>`
+          ${r.media.length < MAX_PER_RECORD ? html`<button class="btn sm ghost" data-add-photo="${r.id}">${icon('plus')} 사진 추가</button>` : ''}${r.parent_status === 'approved' ? html`<span class="badge b-ack">${icon('check')} 보호자 공개됨${r.media.some((m) => m.shared_dog_ids.length) ? ` · 사진 ${r.media.filter((m) => m.shared_dog_ids.length).length}장` : ''}</span><button class="btn sm ghost" data-approve="${r.id}">공개 내용 수정</button><button class="btn sm ghost" data-revoke="${r.id}">공개 취소</button>` : html`<span class="badge b-private">${icon('lock')} 내부 기록</span><button class="btn sm ghost" data-approve="${r.id}">보호자 공개 승인…</button>`}</div></div></li>`)}</ul>`
         : html`<div style="padding:14px 0">${empty('오늘 작성된 기록이 없습니다', '', html`<br><a class="btn" href="#/record/new?dog=${d.id}">돌봄 기록 작성</a>`)}</div>`}</div></section>
 
     <section class="section" id="dog-photos" aria-labelledby="photos-title"><div class="head"><h2 id="photos-title">오늘 찍힌 사진</h2><span class="small muted">${tagged.length}장 · 직원만 볼 수 있어요</span></div>
@@ -79,6 +79,8 @@ export async function dogDetailView(ctx) {
       ${d.tasks.length ? html`<div class="task-list">${d.tasks.map((t) => taskRow(t, staff, { showDog: false }))}</div>` : empty('이 반려견의 업무가 없습니다', '기록을 바탕으로 후속 업무를 만들 수 있습니다.')}</section>
 
     <section class="section" id="guardians" aria-labelledby="gt"><div class="head"><h2 id="gt">보호자 계정</h2><button class="btn secondary" id="invite">${icon('plus')} 초대 코드 만들기</button></div>
+      ${d.consent_at ? html`<p class="callout" style="margin-bottom:10px">${icon('check')} 보호자 동의 확인됨 (${fmtWhen(d.consent_at)}) · 사진 공유와 퇴원 후 3개월 뒤 삭제에 대한 동의를 받은 것으로 기록되어 있습니다.</p>`
+        : html`<div class="callout clay" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>보호자 동의가 확인되지 않았습니다.</b> 동의를 받기 전에는 이 아이의 글·사진을 보호자에게 공개할 수 없습니다.</span><button class="btn sm" id="consent">동의 확인 기록</button></div>`}
       <div class="panel" style="padding:4px 18px">
         ${g.guardians.length ? html`<ul class="timeline">${g.guardians.map((p) => html`<li style="grid-template-columns:1fr auto"><div><b>${p.name}</b> <span class="small muted">${p.email}</span></div><span class="badge b-ack">${icon('check')} 가입됨</span></li>`)}</ul>`
           : html`<p class="muted small" style="padding:14px 0">아직 가입한 보호자가 없습니다. 초대 코드를 만들어 보호자에게 전달해 주세요.</p>`}
@@ -89,6 +91,10 @@ export async function dogDetailView(ctx) {
 
   root.querySelector('#goto-tasks').addEventListener('click', () => root.querySelector('#dog-tasks').scrollIntoView({ behavior: 'smooth' }));
   root.querySelector('#edit').addEventListener('click', () => profileModal(ctx, d));
+  root.querySelector('#consent')?.addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
+    if (!confirm('보호자에게 사진 공유와 퇴원 후 3개월 뒤 삭제에 대한 동의를 받았나요? 확인하면 동의 확인 시각이 기록됩니다.')) return;
+    await api.recordConsent(d.id); toast('보호자 동의 확인을 기록했습니다.'); ctx.rerender();
+  })));
   root.querySelector('#invite').addEventListener('click', (e) => busy(e.currentTarget, () => guarded(async () => {
     const inv = await api.createInvite(d.id);
     inviteModal(ctx, inv);
@@ -118,24 +124,42 @@ export async function dogDetailView(ctx) {
     ctx.rerender();
   }));
   bindTaskActions(root, ctx);
-  root.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', () => approveModal(ctx, d.records_today.find((r) => r.id === +b.dataset.approve))));
+  root.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', () => approveModal(ctx, d.records_today.find((r) => r.id === +b.dataset.approve), d)));
   root.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => busy(b, () => guarded(async () => { await api.parentApproval(+b.dataset.revoke, { action: 'revoke' }); toast('보호자 공개를 취소했습니다.'); ctx.rerender(); }))));
 }
 
-function approveModal(ctx, r) {
+async function approveModal(ctx, r, d) {
+  const dogs = await api.dogs();
+  const consent = Object.fromEntries(dogs.map((x) => [x.id, !!x.consent_at]));
+  const approved = r.parent_status === 'approved';
+  // 기본 선택: 이미 승인했다면 기존 공개 대상, 처음이면 '이 기록의 아이'가 찍힌 사진만 그 아이 보호자에게
+  const checked = (m, id) => (approved ? m.shared_dog_ids.includes(id) : id === r.dog_id);
   openModal({
-    title: '보호자 공개 승인',
-    body: html`<form class="stack" novalidate><p class="callout">직원 내부 기록과 업무 인계 내용은 공개되지 않습니다. 아래 문구만 보호자 미리보기에 표시됩니다. (실제 전송 기능은 없습니다)</p>
+    title: approved ? '공개 내용 수정' : '보호자 공개 승인', wide: r.media.length > 0,
+    body: html`<form class="stack" novalidate><p class="callout">직원 내부 기록과 업무 인계 내용은 공개되지 않습니다. 아래 문구와 <b>선택한 사진</b>만, 선택한 아이의 보호자에게 보입니다. (실제 알림 전송은 없고, 보호자가 앱을 열면 보입니다)</p>
       <div class="quote"><p class="small muted">내부 기록 원문</p><p>${r.content}</p></div>
-      <div class="field"><label for="pt">보호자에게 보여줄 문구 *</label><textarea class="input" id="pt" name="parent_text" maxlength="500">${r.content}</textarea><p class="hint">내부 인계 표현(예: 담당자 지정)은 직접 지우거나 고쳐 주세요.</p></div>
-      <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn" type="submit">공개 승인</button></div></form>`.toString(),
+      <div class="field"><label for="pt">보호자에게 보여줄 문구 ${r.media.length ? html`<span class="muted small">(사진만 공개하려면 비워도 됩니다)</span>` : '*'}</label>
+        <textarea class="input" id="pt" name="parent_text" maxlength="500">${approved ? r.parent_text : r.content}</textarea>
+        <p class="hint">내부 인계 표현(예: 담당자 지정)은 직접 지우거나 고쳐 주세요. 이 문구는 <b>${d.name}</b>의 보호자에게만 보입니다.</p></div>
+      ${r.media.length ? html`<div class="field" data-field="media"><span class="lbl">공개할 사진</span>
+        <p class="hint">사진마다 어느 아이의 보호자에게 보일지 고르세요. 아무도 고르지 않은 사진은 공개되지 않습니다. 다른 집 아이가 찍힌 사진은 그 아이의 보호자에게 보낼 때만 체크하세요.</p>
+        <div class="share-list">${r.media.map((m, i) => html`<div class="share-row"><img src="/api/media/${m.id}/file?size=thumb" alt="사진 ${i + 1}">
+          <div><p class="small muted">사진 ${i + 1} · 찍힌 아이: ${m.dog_names.join(', ')}</p>
+            <div class="checks">${m.dog_ids.map((id, k) => html`<label class="check"><input type="checkbox" data-m="${m.id}" value="${id}" ${checked(m, id) && consent[id] ? 'checked' : ''} ${consent[id] ? '' : 'disabled'}> ${m.dog_names[k]}의 보호자${consent[id] ? '' : html` <span class="muted">(동의 미확인)</span>`}</label>`)}</div></div></div>`)}</div></div>` : ''}
+      <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn" type="submit">${approved ? '공개 내용 저장' : '공개 승인'}</button></div></form>`.toString(),
     onMount(el, close) {
       const f = el.querySelector('form');
       f.addEventListener('submit', (e) => {
         e.preventDefault(); fieldErrors(f, { errors: [] });
-        const v = f.parent_text.value.trim();
-        if (!v) { showFieldError(f, 'parent_text', '보호자에게 보여줄 문구를 입력해 주세요.'); return; }
-        busy(f.querySelector('[type=submit]'), () => guarded(async () => { await api.parentApproval(r.id, { action: 'approve', parent_text: v }); close(); toast('보호자 미리보기에 공개하도록 승인했습니다.'); ctx.rerender(); }));
+        const media = r.media.map((m) => ({ media_id: m.id, dog_ids: [...f.querySelectorAll(`[data-m="${m.id}"]:checked`)].map((c) => +c.value) })).filter((m) => m.dog_ids.length);
+        const text = f.parent_text.value.trim();
+        if (!text && !media.length) { showFieldError(f, 'parent_text', '보호자에게 보여줄 문구를 입력하거나 공개할 사진을 선택해 주세요.'); return; }
+        busy(f.querySelector('[type=submit]'), async () => {
+          try {
+            await api.parentApproval(r.id, { action: 'approve', parent_text: text, media });
+            close(); toast(media.length ? `보호자 공개를 저장했습니다. (사진 ${media.length}장)` : '보호자 공개를 저장했습니다.'); ctx.rerender();
+          } catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); }
+        });
       });
     },
   });
@@ -183,6 +207,7 @@ function registerDogModal(ctx) {
         <div class="field"><label for="r-breed">견종 *</label><input class="input" id="r-breed" name="breed" maxlength="40" placeholder="예: 푸들, 믹스견"></div></div>
       <div class="row2"><div class="field"><label for="r-birth">생년월일 *</label><input class="input" id="r-birth" name="birth_date" type="date"><p class="hint">정확한 날짜를 모르면 대략적인 날짜를 입력하세요.</p></div>
         <div class="field"><label for="r-owner">보호자 이름 *</label><input class="input" id="r-owner" name="owner_name" maxlength="40"></div></div>
+      <label class="check consent-check"><input type="checkbox" name="consent_confirmed"> 보호자에게 <b>사진 공유</b>와 <b>퇴원 후 3개월 뒤 삭제</b>에 대한 동의를 받았습니다. <span class="muted small">(체크하지 않으면 나중에 프로필에서 확인을 기록하기 전까지 공개할 수 없습니다)</span></label>
       <details class="field"><summary class="small">돌봄 참고사항 입력 (선택)</summary><div class="stack" style="margin-top:10px">
         <p class="callout">직원이 직접 확인한 내용만 입력하세요. AI가 추정해서 채우지 않습니다.</p>
         ${CTX_LABELS.map(([k, l]) => html`<div class="field"><label for="rc-${k}">${l}</label><textarea class="input" style="min-height:56px" id="rc-${k}" name="ctx_${k}" maxlength="300"></textarea></div>`)}</div></details>
@@ -202,7 +227,7 @@ function registerDogModal(ctx) {
         busy(f.querySelector('[type=submit]'), async () => {
           let dog;
           try {
-            dog = await api.createDog({ name: v.name.trim(), breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context });
+            dog = await api.createDog({ name: v.name.trim(), breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context, consent_confirmed: !!v.consent_confirmed });
           } catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); return; }
           let photoFailed = false;
           if (photo.blob) { try { await api.uploadPhoto(dog.id, photo.blob); } catch { photoFailed = true; } }
