@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("PAWCARE_DB", str(tmp_path / "t.db"))
+    monkeypatch.setenv("PAWCARE_UPLOADS", str(tmp_path / "uploads"))
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     from backend.main import app

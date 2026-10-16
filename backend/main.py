@@ -8,8 +8,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .database import ROOT, connect, init_db
-from .routes import ai, dogs, misc, records, tasks
+import re
+
+from fastapi.responses import FileResponse
+
+from .database import ROOT, connect, init_db, upload_dir
+from .routes import ai, dogs, misc, records, routine, tasks
 from .seed import seed
 
 
@@ -58,7 +62,22 @@ def health():
     return {"ok": True, "ai_configured": bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"))}
 
 
-for r in (misc.router, dogs.router, records.router, tasks.router, ai.router):
+for r in (misc.router, dogs.router, records.router, tasks.router, ai.router, routine.router):
     app.include_router(r)
+
+_FILE = re.compile(r"^[A-Za-z0-9._-]+\.(webp|jpg|png)$")
+_MEDIA = {"webp": "image/webp", "jpg": "image/jpeg", "png": "image/png"}
+
+
+@app.get("/uploads/dogs/{filename}")
+def uploaded_photo(filename: str):
+    """업로드된 반려견 사진. 파일명은 무작위이며 경로 이동 문자는 허용하지 않는다."""
+    if not _FILE.match(filename) or ".." in filename:
+        raise HTTPException(404, "사진을 찾을 수 없습니다.")
+    path = upload_dir() / "dogs" / filename
+    if not path.is_file():
+        raise HTTPException(404, "사진을 찾을 수 없습니다.")
+    return FileResponse(path, media_type=_MEDIA[filename.rsplit(".", 1)[1]],
+                        headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"})
 
 app.mount("/", StaticFiles(directory=ROOT / "frontend", html=True), name="frontend")

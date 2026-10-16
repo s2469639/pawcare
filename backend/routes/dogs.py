@@ -1,20 +1,21 @@
 import json
+import secrets
 import sqlite3
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from ..database import get_db, now_iso
+from ..database import get_db, now_iso, upload_dir
 from ..deps import current_staff, get_dog_or_404
-from ..schemas import DogPatch
+from ..schemas import DogCreate, DogPatch
 from .common import TASK_SELECT, dog_dict, task_dict, today_prefix
 
 router = APIRouter(prefix="/api/dogs", tags=["dogs"])
 
 
 def _record_view(db, org_id: int, dog_id: int, scope: str):
-    sql = ("SELECT r.*, s.name AS author_name, s.role AS author_role FROM care_records r "
-           "JOIN staff s ON s.id=r.author_id WHERE r.org_id=? AND r.dog_id=?")
+    sql = ("SELECT r.*, s.name AS author_name, s.role AS author_role, b.name AS block_name FROM care_records r "
+           "JOIN staff s ON s.id=r.author_id LEFT JOIN routine_blocks b ON b.id=r.block_id WHERE r.org_id=? AND r.dog_id=?")
     args = [org_id, dog_id]
     if scope == "today":
         sql += " AND r.observed_at LIKE ?"
@@ -83,4 +84,73 @@ def patch_dog(dog_id: int, body: DogPatch, staff=Depends(current_staff), db: sql
     if data:
         sets = ", ".join(f"{k}=?" for k in data)
         db.execute(f"UPDATE dogs SET {sets} WHERE id=?", (*data.values(), dog_id))
+    return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())
+
+
+AVATAR_COLORS = ["#C98D72", "#A5AE98", "#8E9A82", "#7C6F64", "#B8A58C", "#9A8F7E"]
+MAX_PHOTO = 1_000_000
+PHOTO_TYPES = {"image/webp": "webp", "image/jpeg": "jpg", "image/png": "png"}
+
+
+def _sniff(data: bytes):
+    """파일 앞부분(매직 넘버)으로 실제 이미지 형식을 판별한다. Content-Type만 믿지 않는다."""
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    return None
+
+
+def _remove_uploaded(photo: Optional[str]):
+    if photo and photo.startswith("uploads/dogs/"):
+        (upload_dir() / "dogs" / photo.rsplit("/", 1)[1]).unlink(missing_ok=True)
+
+
+@router.post("", status_code=201)
+def create_dog(body: DogCreate, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
+    org = staff["org_id"]
+    if db.execute("SELECT 1 FROM dogs WHERE org_id=? AND name=? AND owner_name=?", (org, body.name, body.owner_name)).fetchone():
+        raise HTTPException(409, f"이미 등록된 반려견입니다. ({body.name} · 보호자 {body.owner_name})")
+    ctx = {k: "" for k in ("meal", "sensitivity", "behavior", "owner_request", "other")}
+    ctx.update(body.care_context or {})
+    n = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=?", (org,)).fetchone()[0]
+    cur = db.execute(
+        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context) VALUES (?,?,?,?,?,?,?)",
+        (org, body.name, body.breed, body.birth_date, AVATAR_COLORS[n % len(AVATAR_COLORS)], body.owner_name,
+         json.dumps(ctx, ensure_ascii=False)))
+    return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (cur.lastrowid,)).fetchone())
+
+
+@router.post("/{dog_id}/photo")
+async def upload_photo(dog_id: int, request: Request, staff=Depends(current_staff),
+                       db: sqlite3.Connection = Depends(get_db)):
+    """원본 이미지 바이트를 그대로 받는다. 브라우저에서 정사각형(512px)으로 잘라 보내는 것을 전제로 한다."""
+    dog = get_dog_or_404(db, dog_id, staff["org_id"])
+    ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if ctype not in PHOTO_TYPES:
+        raise HTTPException(415, "JPG, PNG, WebP 형식의 사진만 올릴 수 있습니다.")
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_PHOTO:
+        raise HTTPException(413, "사진 용량은 1MB 이하여야 합니다.")
+    data = await request.body()
+    if len(data) > MAX_PHOTO:
+        raise HTTPException(413, "사진 용량은 1MB 이하여야 합니다.")
+    if _sniff(data) != ctype:
+        raise HTTPException(415, "사진 파일이 올바르지 않습니다. 다른 사진을 선택해 주세요.")
+    folder = upload_dir() / "dogs"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{dog_id}-{secrets.token_hex(6)}.{PHOTO_TYPES[ctype]}"
+    (folder / name).write_bytes(data)
+    _remove_uploaded(dog["photo"])
+    db.execute("UPDATE dogs SET photo=? WHERE id=?", (f"uploads/dogs/{name}", dog_id))
+    return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())
+
+
+@router.delete("/{dog_id}/photo")
+def delete_photo(dog_id: int, staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_db)):
+    dog = get_dog_or_404(db, dog_id, staff["org_id"])
+    _remove_uploaded(dog["photo"])
+    db.execute("UPDATE dogs SET photo=NULL WHERE id=?", (dog_id,))
     return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (dog_id,)).fetchone())

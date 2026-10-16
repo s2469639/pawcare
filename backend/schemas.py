@@ -19,6 +19,7 @@ class RecordCreate(BaseModel):
     content: str = Field(default="", max_length=1000)
     observed_at: Optional[str] = None
     author_id: Optional[int] = None
+    block_id: Optional[int] = None
 
     _s = field_validator("structured_value", "content", mode="before")(_strip)
 
@@ -101,3 +102,39 @@ class DogPatch(BaseModel):
 
 class SuggestRequest(BaseModel):
     record_id: int
+
+
+_CTX_KEYS = {"meal", "sensitivity", "behavior", "owner_request", "other"}
+
+
+def _check_ctx(v):
+    if v is None:
+        return v
+    if set(v) - _CTX_KEYS:
+        raise ValueError("허용되지 않는 돌봄 정보 항목입니다.")
+    if any(len(x) > 300 for x in v.values()):
+        raise ValueError("각 항목은 300자 이내여야 합니다.")
+    return {k: x.strip() for k, x in v.items()}
+
+
+def _check_birth(v):
+    try:
+        d = datetime.strptime(v, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        raise ValueError("생년월일은 YYYY-MM-DD 형식이어야 합니다.")
+    from .database import KST
+    if d > datetime.now(KST).date():
+        raise ValueError("생년월일은 오늘 이후일 수 없습니다.")
+    return v
+
+
+class DogCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=20)
+    breed: str = Field(min_length=1, max_length=40)
+    birth_date: str
+    owner_name: str = Field(min_length=1, max_length=40)
+    care_context: Optional[dict[str, str]] = None
+
+    _s = field_validator("name", "breed", "owner_name", mode="before")(_strip)
+    _b = field_validator("birth_date")(_check_birth)
+    _c = field_validator("care_context")(_check_ctx)

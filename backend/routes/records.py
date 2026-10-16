@@ -2,15 +2,16 @@ import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..database import get_db, now_iso
+from ..database import block_for, get_db, now_iso
 from ..deps import current_staff, get_dog_or_404, get_staff_in_org
 from ..schemas import ApprovalBody, RecordCreate
 from .common import today_prefix
 
 router = APIRouter(prefix="/api/records", tags=["records"])
 
-BASE = ("SELECT r.*, d.name AS dog_name, s.name AS author_name, s.role AS author_role "
-        "FROM care_records r JOIN dogs d ON d.id=r.dog_id JOIN staff s ON s.id=r.author_id ")
+BASE = ("SELECT r.*, d.name AS dog_name, s.name AS author_name, s.role AS author_role, b.name AS block_name "
+        "FROM care_records r JOIN dogs d ON d.id=r.dog_id JOIN staff s ON s.id=r.author_id "
+        "LEFT JOIN routine_blocks b ON b.id=r.block_id ")
 
 
 @router.get("")
@@ -45,10 +46,15 @@ def create_record(body: RecordCreate, staff=Depends(current_staff), db: sqlite3.
     author_id = body.author_id or staff["id"]
     get_staff_in_org(db, author_id, staff["org_id"])
     now = now_iso()
+    observed = body.observed_at or now
+    blocks = [dict(b) for b in db.execute("SELECT * FROM routine_blocks WHERE org_id=? ORDER BY sort_order", (staff["org_id"],))]
+    if body.block_id is not None and body.block_id not in {b["id"] for b in blocks}:
+        raise HTTPException(422, "일과 구간을 찾을 수 없습니다.")
+    block_id = body.block_id if body.block_id is not None else block_for(blocks, observed)
     cur = db.execute(
-        "INSERT INTO care_records(org_id,dog_id,author_id,record_type,structured_value,content,observed_at,created_at)"
-        " VALUES (?,?,?,?,?,?,?,?)",
-        (staff["org_id"], body.dog_id, author_id, body.record_type, sv, content, body.observed_at or now, now))
+        "INSERT INTO care_records(org_id,dog_id,author_id,record_type,structured_value,content,observed_at,created_at,block_id)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
+        (staff["org_id"], body.dog_id, author_id, body.record_type, sv, content, observed, now, block_id))
     return dict(db.execute(BASE + "WHERE r.id=?", (cur.lastrowid,)).fetchone())
 
 

@@ -3,7 +3,7 @@ import json
 import sqlite3
 from datetime import datetime
 
-from .database import KST, SAMPLE_PHOTOS, TABLES, init_db
+from .database import KST, SAMPLE_PHOTOS, TABLES, ensure_routine, init_db
 
 
 def _t(hour: int, minute: int = 0) -> str:
@@ -96,4 +96,5 @@ def seed(conn: sqlite3.Connection) -> None:
          3, 1, "acknowledged", "completed", _t(11, 30), ack_by=1, ack_at=_t(11, 35),
          note="음수 확인 후 기록에 반영했습니다.", done=_t(11, 50))
     task(2, 6, r_cloud, "식사량 기록 확인", "점심 식사량 기록을 확인합니다.", 4, 4, "pending", "todo", _t(12, 5))
+    ensure_routine(c)
     c.commit()
