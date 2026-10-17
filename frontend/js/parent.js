@@ -34,16 +34,23 @@ function openPhotoViewer(list, start) {
 const photoGrid = (media, key) => (media.length ? html`<div class="thumbs big" data-grid="${key}">${media.map((m, i) => html`<button type="button" class="thumb" data-open="${key}:${i}" aria-label="사진 ${i + 1} 크게 보기"><img src="${thumbUrl(m.id)}" alt="" loading="lazy"></button>`)}</div>` : '');
 const newBadge = (x) => (x.is_new ? html`<span class="badge b-pending">새 알림장</span>` : '');
 
-/** 보호자 화면: 본인에게 연결된 반려견의 '직원이 공개 승인한' 글과 사진만 보인다. */
-export async function parentView({ root, me, demo, demoAccounts, logout, demoSwitch }) {
+/** 보호자 화면 공통 틀(상단 바 + 알림장/일정 탭). 본문을 그릴 요소를 돌려준다. */
+export function parentFrame({ root, me, demo, demoAccounts, logout, demoSwitch }, active) {
   root.innerHTML = html`<div class="parent-wrap"><header class="parent-bar">
       <a class="brand dark" href="#/parent"><img src="assets/favicon.svg" width="26" height="26" alt=""><span class="word">PawCare</span></a><span class="spacer"></span>
       ${demo ? html`<label class="small muted" for="who">시연 계정</label>${demoSelect(demoAccounts, me.id)}` : html`<span class="small">${me.name}님</span>`}
       <button class="btn secondary sm" id="logout">${demo ? '처음 화면으로' : '로그아웃'}</button></header>
+    <nav class="chips ptabs" aria-label="보호자 메뉴"><a class="chip" href="#/parent" ${active === 'feed' ? html`aria-current="page"` : ''}>알림장</a><a class="chip" href="#/parent/calendar" ${active === 'calendar' ? html`aria-current="page"` : ''}>${icon('cal')} 우리 반 일정</a></nav>
     <div id="pw"></div></div>`.toString();
   root.querySelector('#logout').addEventListener('click', logout);
   root.querySelector('#who')?.addEventListener('change', (e) => guarded(() => demoSwitch(+e.target.value)));
-  const pw = root.querySelector('#pw');
+  return root.querySelector('#pw');
+}
+
+/** 보호자 화면: 본인에게 연결된 반려견의 '직원이 공개 승인한' 글과 사진만 보인다. */
+export async function parentView(ctx) {
+  const { me } = ctx;
+  const pw = parentFrame(ctx, 'feed');
   try {
     let dogs = await api.parentDogs();
     let cur = dogs[0]?.id;

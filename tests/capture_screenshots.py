@@ -96,7 +96,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(500); shot("25-photo-viewer"); page.keyboard.press("Escape")
 
     # 공개 승인(사진별 공개 대상) → 보호자 알림장
-    page.locator(".timeline").first.locator("li").first.get_by_role("button", name="보호자 공개 승인…").click()
+    page.locator(".timeline li", has=page.locator(".thumb")).first.get_by_role("button", name="보호자 공개 승인…").click()
     expect(page.locator(".share-row")).to_have_count(2)
     page.locator(".share-row").nth(0).get_by_label("두부의 보호자").check(); shot("27-share-modal")
     page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
@@ -115,6 +115,23 @@ with sync_playwright() as p:
     page.get_by_role("button", name="기록 저장").click(); expect(page.locator("#done")).to_contain_text("사진 1장을 첨부했습니다.")
     page.goto(f"{BASE}/#/routine"); page.locator(".rblock", has_text="점심·휴식").click()
     expect(page.locator(".share-card")).to_be_visible(); page.wait_for_timeout(500); shot("30-routine-share", True)
+
+    # 캘린더: 직원 월간 화면(오늘 일정 하나 추가) → 보호자 일정
+    page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
+    page.goto(f"{BASE}/#/calendar"); expect(page.get_by_role("heading", name="캘린더")).to_be_visible()
+    page.get_by_role("button", name="일정 추가").click(); dlg = page.get_by_role("dialog")
+    dlg.get_by_label("제목").fill("원내 산책 대회"); dlg.get_by_label("보호자 일정에 공개").check()
+    dlg.get_by_label("시작 시간 (비우면 종일)").fill("14:00"); dlg.get_by_label("끝나는 시간").fill("15:30")
+    dlg.get_by_label("설명").fill("반 친구들과 함께 마당을 돕니다. 가장 신나게 걷는 아이에게 작은 간식을 줍니다.")
+    dlg.locator('[data-add="staff"]').click(); dlg.locator('[data-list="staff"] input').last.fill("마당 바닥 점검")
+    dlg.locator('[data-add="staff"]').click(); dlg.locator('[data-list="staff"] input').last.fill("간식·물그릇 준비")
+    dlg.locator('[data-add="parent"]').click(); dlg.locator('[data-list="parent"] input').fill("편한 하네스를 착용해 주세요")
+    dlg.locator("#ef button[type=submit]").click(); expect(page.locator(".cal-event", has_text="원내 산책 대회")).to_be_visible()
+    page.locator(".cal-event", has_text="원내 산책 대회").locator("[data-prep]").first.check(); page.wait_for_timeout(700); shot("39-calendar-staff", True)
+    page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("heading", name="다가오는 일정")).to_be_visible(); page.wait_for_timeout(500); shot("40-dashboard-upcoming", True)
+    page.locator("#who").select_option(label="보호자 · 김서연 (보리)"); page.wait_for_timeout(900)
+    page.goto(f"{BASE}/#/parent/calendar"); expect(page.get_by_role("heading", name="우리 반 일정")).to_be_visible(); page.wait_for_timeout(600); shot("41-calendar-parent", True)
+    page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
 
     # 퇴원 처리(관리자) → 삭제 예정 안내 → 재등록
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
@@ -147,4 +164,6 @@ with sync_playwright() as p:
 
     page.set_viewport_size({"width": 390, "height": 800})
     page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("heading", name="오늘의 업무")).to_be_visible(); shot("13-mobile-dashboard")
+    page.goto(f"{BASE}/#/calendar"); expect(page.get_by_role("heading", name="캘린더")).to_be_visible(); page.wait_for_timeout(500); shot("42-mobile-calendar")
+    assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1"), "모바일 캘린더 가로 스크롤"
     b.close()

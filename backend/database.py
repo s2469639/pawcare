@@ -198,6 +198,32 @@ CREATE TABLE IF NOT EXISTS invites (
     used_at TEXT,
     used_by INTEGER REFERENCES accounts(id)
 );
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('program','event','closed','notice')),
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    parent_visible INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER NOT NULL REFERENCES staff(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS calendar_prep_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE,
+    audience TEXT NOT NULL CHECK (audience IN ('staff','parent')),
+    text TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    done_by INTEGER REFERENCES staff(id),
+    done_at TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cal_org ON calendar_events(org_id, start_date, end_date);
 CREATE TABLE IF NOT EXISTS login_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL,
@@ -208,7 +234,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id, action_status);
 CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 """
 
-TABLES = ["parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
+TABLES = ["calendar_prep_items", "calendar_events", "parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
           "care_records", "routine_blocks", "dogs", "staff", "organizations"]
 
 
@@ -252,6 +278,7 @@ def ensure_routine(conn: sqlite3.Connection) -> None:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    had_calendar = conn.execute("SELECT 1 FROM sqlite_master WHERE name='calendar_events'").fetchone() is not None
     conn.executescript(SCHEMA)
     if "block_id" not in {r["name"] for r in conn.execute("PRAGMA table_info(care_records)")}:
         conn.execute("ALTER TABLE care_records ADD COLUMN block_id INTEGER REFERENCES routine_blocks(id)")
@@ -273,6 +300,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute(f"UPDATE dogs SET consent_at=? WHERE name IN ({','.join('?' * len(SAMPLE_PHOTOS))}) AND consent_at IS NULL",
                      (now_iso(), *SAMPLE_PHOTOS))
     ensure_routine(conn)
+    if not had_calendar:      # 캘린더 도입 전 DB: 샘플 유치원이 있으면 샘플 일정을 한 번만 채운다(직접 지워도 다시 생기지 않는다)
+        from .seed import seed_calendar
+        seed_calendar(conn)
     from .seed import seed_accounts   # 이전 버전 DB: 계정이 하나도 없으면 샘플 직원·보호자의 데모 계정을 만든다
     seed_accounts(conn)
     conn.commit()

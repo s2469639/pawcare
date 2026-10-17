@@ -194,7 +194,7 @@ with sync_playwright() as p:
 
     # 10. 보호자 공개 승인 → 미리보기
     page.goto(f"{BASE}/#/dogs/1")
-    page.get_by_role("button", name="보호자 공개 승인…").first.click()
+    page.locator(".timeline li", has_text="묽은 변").get_by_role("button", name="보호자 공개 승인…").first.click()   # 위에서 작성한 기록(시각에 따라 목록 순서가 달라지므로 내용으로 고른다)
     page.get_by_label("보호자에게 보여줄 문구 *").fill("오늘 점심은 조금 적게 먹었지만 컨디션을 살피고 있어요.")
     page.locator(".modal").get_by_role("button", name="공개 승인", exact=True).click()
     expect(page.get_by_text("보호자 공개됨").first).to_be_visible()
@@ -429,7 +429,7 @@ with sync_playwright() as p:
     rec = next(r for r in recs if len(r["media"]) == 2)
     ma, mb = rec["media"][0]["id"], rec["media"][1]["id"]                               # ma: 보리·두부, mb: 보리
     page.goto(f"{BASE}/#/dogs/1")
-    page.get_by_role("button", name="보호자 공개 승인…").first.click()
+    page.locator(".timeline li", has=page.locator(".thumb")).get_by_role("button", name="보호자 공개 승인…").first.click()   # 사진이 있는 기록(시각에 따라 목록 순서가 달라지므로 위치로 고르지 않는다)
     expect(page.locator(".share-row")).to_have_count(2)
     expect(page.locator(".share-row").nth(0).get_by_label("보리의 보호자")).to_be_checked()      # 기본: 기록의 아이만
     expect(page.locator(".share-row").nth(0).get_by_label("두부의 보호자")).not_to_be_checked()
@@ -460,7 +460,7 @@ with sync_playwright() as p:
     assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 404
     switch_to("오전 담당자 · 한지우", "오늘의 업무")
     page.goto(f"{BASE}/#/dogs/1")
-    page.get_by_role("button", name="공개 취소").first.click()                             # 확인창 없이 바로 취소
+    page.locator(".timeline li", has=page.locator(".thumb")).get_by_role("button", name="공개 취소").first.click()   # 확인창 없이 바로 취소(사진이 있는 기록)
     switch_to("보호자 · 박도윤 (두부)", "박도윤님의 알림장")
     expect(page.get_by_text("공개된 알림장이 없습니다")).to_be_visible()                       # 취소하면 바로 사라진다
     assert page.request.get(f"{BASE}/api/parent/media/{ma}/file").status == 404
@@ -542,6 +542,39 @@ with sync_playwright() as p:
     expect(page.locator("#ai-test-out")).to_contain_text("GEMINI_API_KEY가 설정되지 않았습니다")
     shot("36-ai-connection-test")
     step("AI 연결 테스트: 키가 없으면 원인을 안내(데모 분석으로 동작)")
+
+    # 캘린더: 직원이 일정·준비 항목을 만들고 체크 → 보호자는 공개 일정과 보호자 준비물만 읽는다
+    page.goto(f"{BASE}/#/dashboard")
+    pick("관리자 · 정하은")
+    expect(page.get_by_role("heading", name="다가오는 일정")).to_be_visible()
+    page.goto(f"{BASE}/#/calendar"); expect(page.get_by_role("heading", name="캘린더")).to_be_visible()
+    page.get_by_role("button", name="일정 추가").click()
+    dlg = page.get_by_role("dialog")
+    dlg.locator("#ef button[type=submit]").click()                     # 제목 없이 저장 → 오류, 창 유지
+    expect(dlg.locator(".error, .form-error").first).to_be_visible()
+    dlg.get_by_label("제목").fill("E2E 산책 행사")
+    dlg.get_by_label("보호자 일정에 공개").check()
+    dlg.locator('[data-add="staff"]').click(); dlg.locator('[data-list="staff"] input').fill("리드줄 점검")
+    dlg.locator('[data-add="parent"]').click(); dlg.locator('[data-list="parent"] input').fill("간식 챙겨 주세요")
+    dlg.locator("#ef button[type=submit]").click()
+    ev = page.locator(".cal-event", has_text="E2E 산책 행사")
+    expect(ev).to_be_visible()
+    shot("37-calendar-staff")
+    ev.locator("[data-prep]").check()
+    expect(ev).to_contain_text("모두 준비됨")
+    expect(ev).to_contain_text("정하은 확인")
+    pick("보호자 · 김서연 (보리)")
+    page.goto(f"{BASE}/#/parent/calendar"); expect(page.get_by_role("heading", name="우리 반 일정")).to_be_visible()
+    card = page.locator(".feed-card", has_text="E2E 산책 행사")
+    expect(card).to_be_visible(); expect(card).to_contain_text("간식 챙겨 주세요"); expect(card).not_to_contain_text("리드줄 점검")
+    shot("38-calendar-parent")
+    pick("관리자 · 정하은")
+    page.goto(f"{BASE}/#/calendar")
+    page.once("dialog", lambda d: d.accept())
+    page.locator(".cal-event", has_text="E2E 산책 행사").get_by_role("button", name="삭제").click()
+    expect(page.locator(".cal-event", has_text="E2E 산책 행사")).to_have_count(0)
+    errors[:] = [e for e in errors if "422" not in e]                       # 제목 없이 저장해 일부러 낸 422는 제외
+    step("캘린더: 일정·준비 항목 추가(필수 오류), 직원 체크(확인자 기록), 보호자는 공개 일정과 보호자 준비물만 열람, 삭제")
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")

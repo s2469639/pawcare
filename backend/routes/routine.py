@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import KST, get_db
 from ..deps import current_staff
+from .calendar import today_events
 from .common import TASK_SELECT, task_dict, today_prefix
 
 router = APIRouter(prefix="/api/routine", tags=["routine"])
@@ -59,6 +60,7 @@ def routine(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_d
     title, detail = PROGRAMS.get(now.weekday(), ("주말", "정규 프로그램 없음"))
     return {"date": now.date().isoformat(), "now_time": hhmm, "open": current is not None,
             "current_block_id": current, "default_block_id": default, "blocks": blocks,
+            "today_events": [{k: e[k] for k in ("id", "title", "kind", "start_time", "end_time")} for e in today_events(db, org)],
             "program": {"title": title, "detail": detail, "weekday": "월화수목금토일"[now.weekday()]}}
 
 

@@ -9,6 +9,7 @@ import { recordNewView, aiView } from './records.js';
 import { tasksView, taskDetailView } from './tasks.js';
 import { parentView } from './parent.js';
 import { routineView } from './routine.js';
+import { calendarView, parentCalendarView } from './calendar.js';
 
 const app = document.getElementById('app');
 // me: 로그인한 계정(없으면 null). 세션 자체는 HttpOnly 쿠키라 JS에서 읽을 수 없고, 서버(/api/auth/me)에 물어 확인한다.
@@ -19,6 +20,7 @@ const routes = [
   [/^\/login$/, loginView, { open: true }],
   [/^\/register$/, registerView, { open: true }],
   [/^\/parent$/, parentView, { role: 'parent' }],
+  [/^\/parent\/calendar$/, parentCalendarView, { role: 'parent' }],
   [/^\/dashboard$/, dashboardView, { role: 'staff', shell: true, nav: 'dashboard' }],
   [/^\/dogs$/, dogsView, { role: 'staff', shell: true, nav: 'dogs' }],
   [/^\/dogs\/(\d+)$/, dogDetailView, { role: 'staff', shell: true, nav: 'dogs' }],
@@ -26,6 +28,7 @@ const routes = [
   [/^\/tasks$/, tasksView, { role: 'staff', shell: true, nav: 'tasks' }],
   [/^\/tasks\/(\d+)$/, taskDetailView, { role: 'staff', shell: true, nav: 'tasks' }],
   [/^\/ai(?:\/(\d+))?$/, aiView, { role: 'staff', shell: true, nav: 'ai' }],
+  [/^\/calendar$/, calendarView, { role: 'staff', shell: true, nav: 'calendar' }],
   [/^\/routine(?:\/(\d+))?$/, routineView, { role: 'staff', shell: true, nav: 'routine' }],
 ];
 
@@ -64,7 +67,7 @@ async function demoSwitch(accountId) {
 }
 
 const NAV = [
-  ['dashboard', '/dashboard', '오늘의 업무', 'home'], ['routine', '/routine', '오늘의 일과', 'clock'], ['tasks', '/tasks', '업무 인계', 'list'],
+  ['dashboard', '/dashboard', '오늘의 업무', 'home'], ['routine', '/routine', '오늘의 일과', 'clock'], ['calendar', '/calendar', '캘린더', 'cal'], ['tasks', '/tasks', '업무 인계', 'list'],
   ['dogs', '/dogs', '반려견', 'dog'], ['record', '/record/new', '돌봄 기록 작성', 'pen'], ['ai', '/ai', 'AI 업무 정리', 'spark'],
 ];
 

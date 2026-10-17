@@ -3,6 +3,7 @@ import { taskRow, empty } from './ui.js';
 import { bindTaskActions } from './tasks.js';
 import { api } from './api.js';
 import { routineStrip, programLine } from './routine.js';
+import { KIND, timeText } from './calendar.js';
 
 export async function dashboardView(ctx) {
   const { root, dash, staff, query } = ctx;
@@ -11,7 +12,7 @@ export async function dashboardView(ctx) {
   const list = dash.tasks.filter((t) => matchFilter(t, f));
   const order = ['pending', 'todo', 'in_progress', 'completed'];
   const groups = order.map((k) => [k, list.filter((t) => groupKey(t) === k)]).filter(([, l]) => l.length);
-  const routine = await api.routine();
+  const [routine, up] = await Promise.all([api.routine(), api.calendarUpcoming(7)]);
   const nothingToCheck = c.needs_ack === 0 && c.todo === 0 && c.in_progress === 0;
 
   root.innerHTML = html`
@@ -25,6 +26,8 @@ export async function dashboardView(ctx) {
     </div>
     <section class="section" aria-labelledby="rt"><div class="head"><h2 id="rt">오늘의 일과</h2><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${programLine(routine)}<a class="btn sm secondary" href="#/routine">구간별 기록 현황 ${icon('arrow')}</a></div></div>
       ${routineStrip(routine, null, { compact: true })}</section>
+    <section class="section" aria-labelledby="up"><div class="head"><h2 id="up">다가오는 일정 <span class="muted small">7일 이내</span></h2><a class="btn sm secondary" href="#/calendar">캘린더 열기 ${icon('arrow')}</a></div>
+      ${up.events.length ? html`<p class="small muted" style="margin-bottom:8px">아직 끝내지 않은 직원 준비 항목 <b>${up.open_prep_total}</b>개</p><div class="panel" style="padding:4px 16px"><ul class="upcoming">${up.events.map((e) => html`<li><a href="#/calendar?month=${e.start_date.slice(0, 7)}&day=${e.start_date}"><span class="kind kind-${e.kind}">${KIND[e.kind]}</span> <b>${e.title}</b></a> <span class="small muted">${e.start_date.slice(5).replace('-', '/')}${e.end_date !== e.start_date ? `~${e.end_date.slice(5).replace('-', '/')}` : ''} · ${timeText(e)}</span> ${e.open_prep ? html`<span class="badge b-pending">준비 ${e.open_prep}개 남음</span>` : html`<span class="badge b-done">준비 항목 없음·완료</span>`}</li>`)}</ul></div>` : html`<p class="muted small">7일 안에 등록된 일정이 없습니다.</p>`}</section>
     <div class="section"><div class="quick">
       <a class="btn" href="#/record/new">${icon('pen')} 돌봄 기록 작성</a>
       <a class="btn secondary" href="#/dogs">${icon('dog')} 반려견 목록</a>

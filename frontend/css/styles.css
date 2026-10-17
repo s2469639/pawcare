@@ -315,3 +315,49 @@ details > summary { cursor: pointer; }
   h1 { font-size: 22px; } .landing .word { font-size: 36px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* 캘린더 */
+.cal-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.cal-title { font-size: 20px; min-width: 130px; text-align: center; }
+.cal-legend { margin: 0 0 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.kind { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 6px; padding: 1px 7px; border: 1px solid transparent; white-space: nowrap; }
+.kind-program { background: #E4EAD9; color: #3f4c37; border-color: #b9c4a9; }
+.kind-event { background: var(--clay-tint); color: var(--clay-deep); border-color: #ebc9b8; }
+.kind-closed { background: var(--ink); color: var(--ivory); }
+.kind-notice { background: var(--white); color: var(--ink); border-color: #9aa08f; }
+.cal { border: 1px solid var(--border); border-radius: var(--r); background: var(--white); overflow: hidden; }
+.cal-head, .cal-body { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-head span { text-align: center; font-size: 12.5px; padding: 6px 0; color: var(--gray); background: var(--paper); border-bottom: 1px solid var(--border); }
+.cal-cell { min-height: 84px; padding: 4px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit; overflow: hidden; }
+.cal-cell:nth-child(7n) { border-right: 0; }
+a.cal-cell:hover { background: var(--paper); }
+a.cal-cell:focus-visible { outline: 2px solid var(--clay-deep); outline-offset: -2px; }
+.cal-cell.blank { background: #fbfaf6; }
+.cal-cell[aria-current="date"] { background: var(--sage-tint); box-shadow: inset 0 0 0 2px var(--ink); }
+.cal-num { font-size: 13px; font-weight: 600; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+.cal-cell.today .cal-num { background: var(--clay-deep); color: #fff; }
+.cal-ev { font-size: 11.5px; border-radius: 4px; padding: 0 5px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent; }
+.cal-more { font-size: 11px; color: var(--gray); padding-left: 4px; }
+.cal-event { margin-bottom: 12px; }
+.ev-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ev-title { font-size: 16px; }
+.prep-h { font-size: 13.5px; margin: 14px 0 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.prep { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.prep li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.prep label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; min-height: 32px; }
+.prep .done { text-decoration: line-through; color: var(--gray); }
+.prep.plain { list-style: disc; padding-left: 20px; display: block; }
+.prep.plain li { display: list-item; }
+.prep-edit { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 6px; }
+.prep-row { display: flex; gap: 6px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.upcoming { list-style: none; margin: 0; padding: 0; }
+.upcoming li { padding: 9px 0; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.upcoming li:last-child { border-bottom: 0; }
+.upcoming a { text-decoration: none; color: inherit; }
+.ptabs { margin: 0 0 16px; }
+@media (max-width: 640px) {
+  .cal-cell { min-height: 58px; padding: 2px; }
+  .cal-ev { font-size: 0; height: 6px; padding: 0; }
+  .row2 { grid-template-columns: 1fr; }
+}

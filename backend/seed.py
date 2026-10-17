@@ -1,7 +1,7 @@
 """가상의 샘플 데이터. 모든 이름·정보는 허구입니다."""
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .database import KST, SAMPLE_PHOTOS, TABLES, ensure_routine, init_db, now_iso
 
@@ -97,8 +97,39 @@ def seed(conn: sqlite3.Connection) -> None:
          note="음수 확인 후 기록에 반영했습니다.", done=_t(11, 50))
     task(2, 6, r_cloud, "식사량 기록 확인", "점심 식사량 기록을 확인합니다.", 4, 4, "pending", "todo", _t(12, 5))
     ensure_routine(c)
+    seed_calendar(c)
     seed_accounts(c)
     c.commit()
+
+
+def seed_calendar(conn: sqlite3.Connection) -> None:
+    """반 전체 샘플 일정(오늘 기준 상대 날짜). 샘플 유치원(첫 번째 유치원)에만 채운다."""
+    org = conn.execute("SELECT o.id, (SELECT id FROM staff WHERE org_id=o.id AND role='관리자' LIMIT 1) AS admin FROM organizations o "
+                       "WHERE o.name='해든 도그 유치원'").fetchone()
+    if org is None or org["admin"] is None or conn.execute("SELECT 1 FROM calendar_events WHERE org_id=?", (org["id"],)).fetchone():
+        return
+    today = datetime.now(KST).date()
+    d = lambda n: (today + timedelta(days=n)).isoformat()
+    now = now_iso()
+    # (제목, 종류, 시작, 끝, 시작시간, 끝시간, 설명, 보호자 공개, [(대상, 준비 항목)])
+    events = [
+        ("가을 소풍 산책", "event", d(3), d(3), "10:00", "12:00", "근처 공원에서 반 전체가 함께 산책합니다. 날씨가 나쁘면 실내 놀이로 바뀝니다.", 1,
+         [("staff", "산책 코스 사전 확인"), ("staff", "여분 리드줄·배변봉투 챙기기"), ("staff", "참가 동의 확인"), ("parent", "편한 하네스 착용"), ("parent", "전날 밤 충분한 휴식")]),
+        ("정기 예방접종 확인 주간", "notice", d(5), d(9), None, None, "접종 증명서가 만료되는 아이는 새 증명서를 가져와 주세요.", 1,
+         [("staff", "접종 만료 임박 아이 명단 정리"), ("parent", "접종 증명서 사진 또는 원본 지참")]),
+        ("직원 교육의 날(오후 휴무)", "closed", d(8), d(8), "13:00", "20:00", "직원 교육으로 오후 운영을 쉽니다. 오전 등원은 정상 운영합니다.", 1,
+         [("parent", "오후 하원 시간을 12시 30분까지로 조정")]),
+        ("내부 시설 점검", "notice", d(10), d(10), None, None, "놀이방 바닥 점검. 직원만 확인하는 일정입니다.", 0,
+         [("staff", "점검 업체 출입 확인"), ("staff", "점검 시간 동안 아이들 이동 장소 정하기")]),
+        ("할로윈 변장 놀이", "program", d(14), d(14), "14:00", "16:00", "간단한 소품으로 변장하고 사진을 남깁니다.", 1,
+         [("staff", "소품 안전 점검(삼킬 수 있는 장식 제외)"), ("parent", "변장을 싫어하는 아이는 미리 알려주세요")]),
+    ]
+    for title, kind, s, e, st, et, desc, vis, prep in events:
+        cur = conn.execute("INSERT INTO calendar_events(org_id,title,kind,start_date,end_date,start_time,end_time,description,parent_visible,"
+                           "created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (org["id"], title, kind, s, e, st, et, desc, vis, org["admin"], now, now))
+        conn.executemany("INSERT INTO calendar_prep_items(event_id,audience,text,sort_order) VALUES (?,?,?,?)",
+                         [(cur.lastrowid, a, t, i) for i, (a, t) in enumerate(prep)])
 
 
 # 데모 계정(가상): 이름 → 이메일. 모두 같은 공개 비밀번호를 쓰므로 인터넷 공개 배포에는 사용하지 않는다.
