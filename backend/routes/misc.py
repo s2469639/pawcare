@@ -7,7 +7,7 @@ from ..database import KST, connect, get_db
 from ..deps import current_staff
 from .auth import require_demo
 from ..seed import reset
-from .common import TASK_SELECT, dog_dict, task_dict, today_prefix
+from .common import TASK_SELECT, dog_dict, stay_fields, task_dict, today_prefix
 from datetime import datetime
 
 router = APIRouter(prefix="/api", tags=["misc"])
@@ -43,5 +43,14 @@ def dashboard(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get
     dogs = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=? AND attending=1", (org,)).fetchone()[0]
     tasks = db.execute(TASK_SELECT + " WHERE t.org_id=? ORDER BY rank_order, prio_order, t.created_at DESC", (org,))
     wd = "월화수목금토일"[datetime.now(KST).weekday()]
-    return {"date": today_prefix(), "weekday": wd, "attending_dogs": dogs, "counts": dict(c),
+    stay = None
+    if db.execute("SELECT kind FROM organizations WHERE id=?", (org,)).fetchone()["kind"] == "hotel":
+        stay = {"staying": 0, "checkin_today": 0, "checkout_today": 0, "upcoming": 0}
+        for r in db.execute("SELECT stay_start, stay_end FROM dogs WHERE org_id=? AND attending=1 AND stay_start IS NOT NULL", (org,)):
+            f = stay_fields(r["stay_start"], r["stay_end"])
+            stay["staying"] += f["stay_status"] in ("staying", "checkout_today")
+            stay["upcoming"] += f["stay_status"] == "upcoming"
+            stay["checkin_today"] += f["checkin_today"]
+            stay["checkout_today"] += f["checkout_today"]
+    return {"date": today_prefix(), "weekday": wd, "attending_dogs": dogs, "counts": dict(c), "stay": stay,
             "tasks": [task_dict(t) for t in tasks]}

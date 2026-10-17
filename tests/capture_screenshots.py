@@ -137,6 +137,8 @@ with sync_playwright() as p:
     page.locator("#who").select_option(label="관리자 · 오하준"); page.wait_for_timeout(900)
     page.goto(f"{BASE}/#/routine"); expect(page.locator(".rblock", has_text="굿나잇 체크")).to_be_visible()
     page.locator(".rblock", has_text="저녁 식사·배변").click(); expect(page.locator(".handoff")).to_contain_text("저녁 → 야간 담당자"); page.wait_for_timeout(500); shot("43-hotel-routine", True)
+    page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("status").filter(has_text="숙박 현황")).to_be_visible(); page.wait_for_timeout(500); shot("44-hotel-dashboard", True)
+    page.goto(f"{BASE}/#/dogs"); expect(page.locator(".dog-card", has_text="구름")).to_contain_text("숙박 중"); shot("45-hotel-dogs")
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
 
     # 퇴원 처리(관리자) → 삭제 예정 안내 → 재등록

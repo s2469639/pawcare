@@ -39,9 +39,9 @@ def _set_cookie(request: Request, response: Response, token: str) -> None:
 
 
 def account_view(db: sqlite3.Connection, a: dict) -> dict:
-    org = db.execute("SELECT name FROM organizations WHERE id=?", (a["org_id"],)).fetchone()
+    org = db.execute("SELECT name, kind FROM organizations WHERE id=?", (a["org_id"],)).fetchone()
     v = {"id": a["id"], "name": a["name"], "email": a["email"], "role": a["role"], "org_id": a["org_id"],
-         "org_name": org["name"] if org else "", "staff": None, "dogs": []}
+         "org_name": org["name"] if org else "", "org_kind": org["kind"] if org else "daycare", "staff": None, "dogs": []}
     if a["role"] == "staff" and a["staff_id"]:
         s = db.execute("SELECT id,name,role,org_id FROM staff WHERE id=?", (a["staff_id"],)).fetchone()
         v["staff"] = dict(s) if s else None

@@ -81,6 +81,8 @@ class DogPatch(BaseModel):
     owner_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
     attending: Optional[bool] = None
     care_context: Optional[dict[str, str]] = None
+    stay_start: Optional[str] = None        # 호텔 숙박 기간(null로 보내면 지운다). 호텔 여부·순서는 라우트에서 검사
+    stay_end: Optional[str] = None
 
     @field_validator("birth_date")
     @classmethod
@@ -140,6 +142,8 @@ class DogCreate(BaseModel):
     birth_date: str
     owner_name: str = Field(min_length=1, max_length=40)
     care_context: Optional[dict[str, str]] = None
+    stay_start: Optional[str] = None
+    stay_end: Optional[str] = None
     consent_confirmed: bool = False          # 보호자 동의(사진 공유, 퇴원 후 3개월 뒤 삭제)를 받았음을 직원이 확인
 
     _s = field_validator("name", "breed", "owner_name", mode="before")(_strip)

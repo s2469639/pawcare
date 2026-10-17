@@ -594,6 +594,28 @@ with sync_playwright() as p:
     errors[:] = [e for e in errors if "422" not in e]                       # 빈 메모로 일부러 낸 422는 제외
     step("내 메모: 저장·수정·삭제(빈 메모 오류), 관리자도 다른 직원의 메모는 볼 수 없음")
 
+    # 호텔 숙박 기간: 입실·퇴실일 입력과 숙박 현황
+    pick("관리자 · 오하준")
+    page.goto(f"{BASE}/#/dashboard"); expect(page.get_by_role("status").filter(has_text="숙박 현황")).to_contain_text("숙박 중 1마리")
+    page.goto(f"{BASE}/#/dogs"); expect(page.locator(".dog-card", has_text="구름")).to_contain_text("숙박 중")
+    page.locator("#add-dog").click()
+    m = page.get_by_role("dialog")
+    m.get_by_label("이름 *", exact=True).fill("하늘"); m.get_by_label("견종 *", exact=True).fill("진돗개"); m.get_by_label("생년월일 *").fill("2021-05-05"); m.get_by_label("보호자 이름 *", exact=True).fill("강민수")
+    m.get_by_label("입실일").fill("2030-01-10"); m.get_by_label("퇴실일").fill("2030-01-05")
+    m.get_by_role("button", name="등록", exact=True).click()
+    expect(m.locator(".error")).to_contain_text("퇴실일은 입실일보다 빠를 수 없습니다")      # 잘못된 기간은 해당 칸 아래에 표시
+    m.get_by_label("퇴실일").fill("2030-01-12"); m.get_by_role("button", name="등록", exact=True).click()
+    expect(page.get_by_role("heading", name="하늘")).to_be_visible()
+    expect(page.locator(".dog-head")).to_contain_text("입실 예정"); expect(page.locator(".dog-head")).to_contain_text("2박")
+    shot("44-hotel-stay")
+    page.goto(f"{BASE}/#/dashboard"); settle()                                           # 다른 유치원 직원으로 전환하기 전에 이 프로필에서 벗어난다
+    pick("오전 담당자 · 한지우")
+    page.goto(f"{BASE}/#/dogs"); page.locator("#add-dog").click()
+    expect(page.get_by_role("dialog").get_by_label("입실일")).to_have_count(0)               # 유치원에는 숙박 기간 입력이 없다
+    page.keyboard.press("Escape")
+    errors[:] = [e for e in errors if "422" not in e]
+    step("호텔 숙박 기간: 입실·퇴실일 등록(잘못된 기간 오류), 숙박 현황·배지, 유치원에는 입력칸 없음")
+
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
     pick("관리자 · 오하준")

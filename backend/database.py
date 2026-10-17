@@ -86,7 +86,9 @@ CREATE TABLE IF NOT EXISTS dogs (
     consent_at TEXT,
     discharged_at TEXT,
     purge_after TEXT,
-    purged_at TEXT
+    purged_at TEXT,
+    stay_start TEXT,
+    stay_end TEXT
 );
 CREATE TABLE IF NOT EXISTS care_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,7 +312,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE routine_blocks ADD COLUMN share_prompt INTEGER NOT NULL DEFAULT 0")
         conn.execute(f"UPDATE routine_blocks SET share_prompt=1 WHERE name IN ({','.join('?' * len(SHARE_BLOCK_NAMES))})", SHARE_BLOCK_NAMES)
     dog_cols = {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}
-    for col in ("discharged_at", "purge_after", "purged_at"):
+    for col in ("discharged_at", "purge_after", "purged_at", "stay_start", "stay_end"):
         if col not in dog_cols:
             conn.execute(f"ALTER TABLE dogs ADD COLUMN {col} TEXT")
     if "consent_at" not in {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}:

@@ -118,3 +118,19 @@ export function demoSelect(accounts, meId) {
   return html`<select id="who" class="input" style="width:auto" aria-label="데모 계정 전환">${Object.entries(groups).map(([org, list]) =>
     html`<optgroup label="${org}">${list.map((a) => html`<option value="${a.id}" ${a.id === meId ? 'selected' : ''}>${a.role === 'staff' ? `${a.staff_role} · ${a.name}` : `보호자 · ${a.name} (${a.dogs || '-'})`}</option>`)}</optgroup>`)}</select>`;
 }
+
+const md = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
+/** 호텔 숙박 기간 배지: 입실 예정 / 숙박 중(체크아웃 오늘) / 종료. 숙박 기간이 없으면 빈 문자열. */
+export function stayBadge(d) {
+  if (!d.stay_start || !d.stay_end) return '';
+  const range = `${md(d.stay_start)}~${md(d.stay_end)}${d.stay_nights ? ` · ${d.stay_nights}박` : ' · 당일'}`;
+  if (d.checkout_today) return html`<span class="badge b-pending">${icon('clock')} 오늘 퇴실 · ${range}</span>`;
+  if (d.checkin_today) return html`<span class="badge b-ack">${icon('check')} 오늘 입실 · ${range}</span>`;
+  if (d.stay_status === 'upcoming') return html`<span class="badge b-todo">입실 예정 · ${range}</span>`;
+  if (d.stay_status === 'ended') return html`<span class="badge b-done">숙박 종료 · ${range}</span>`;
+  return html`<span class="badge b-ack">숙박 중 · ${range}</span>`;
+}
+
+/** 입실일·퇴실일 입력칸(호텔 전용). */
+export const stayFields = (d = {}) => html`<div class="row2"><div class="field"><label for="st-s">입실일</label><input class="input" id="st-s" name="stay_start" type="date" value="${d.stay_start || ''}"></div>
+  <div class="field"><label for="st-e">퇴실일</label><input class="input" id="st-e" name="stay_end" type="date" value="${d.stay_end || ''}"><p class="hint">비워 두면 숙박 기간 없이 등록됩니다. 최대 90일.</p></div></div>`;

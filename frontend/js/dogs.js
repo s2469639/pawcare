@@ -1,6 +1,6 @@
 import { api, ApiError } from './api.js';
 import { html, icon, fmtTime, fmtWhen, josa, esc } from './util.js';
-import { avatar, taskRow, empty, ackBadge, actionBadge, busy, guarded, toast, openModal, fieldErrors, showFieldError } from './ui.js';
+import { stayBadge, stayFields, avatar, taskRow, empty, ackBadge, actionBadge, busy, guarded, toast, openModal, fieldErrors, showFieldError } from './ui.js';
 import { bindTaskActions } from './tasks.js';
 import { photoField, bindPhotoField } from './cropper.js';
 import { thumbs, openMediaViewer, processImage, uploadAll, MAX_PER_RECORD } from './media.js';
@@ -9,7 +9,7 @@ const CTX_LABELS = [['meal', '식사 관련 주의사항'], ['sensitivity', '알
 const STATUS = [['all', '재원 중'], ['needs_check', '확인 필요'], ['has_task', '진행할 업무 있음'], ['clear', '열린 업무 없음'], ['discharged', '퇴원']];
 
 const dogCard = (d) => html`<a class="dog-card ${d.needs_check_count ? 'needs' : ''}" href="#/dogs/${d.id}">
-  <div class="top">${avatar(d)}<div><div class="name">${d.name}</div><div class="small muted">${d.breed} · ${d.age_text}</div></div>
+  <div class="top">${avatar(d)}<div><div class="name">${d.name}</div><div class="small muted">${d.breed} · ${d.age_text}</div>${d.stay_start ? html`<div style="margin-top:4px">${stayBadge(d)}</div>` : ''}</div>
     ${d.discharged ? html`<span class="badge b-done" style="margin-left:auto">${d.purged_at ? '자료 삭제됨' : `퇴원 · 삭제 D-${Math.max(d.purge_days_left ?? 0, 0)}`}</span>` : d.needs_check_count ? html`<span class="badge b-pending" style="margin-left:auto">${icon('clock')} 확인 ${d.needs_check_count}</span>` : ''}</div>
   <div class="row"><b>오늘</b><span>${d.today_status ? html`${d.today_status.record_type} · ${fmtTime(d.today_status.observed_at)} ${d.today_status.structured_value && d.today_status.structured_value !== '직접 입력' ? d.today_status.structured_value : d.today_status.content.slice(0, 36)}` : '오늘 기록 없음'}</span></div>
   <div class="row"><b>업무</b><span>${d.open_task_count ? `진행할 업무 ${d.open_task_count}건` : '열린 업무 없음'}</span></div>
@@ -54,7 +54,7 @@ export async function dogDetailView(ctx) {
     <a class="crumb" href="#/dogs">${icon('back')} 반려견 목록</a>
     <div class="card"><div class="dog-head">${avatar(d, 'lg')}
       <div class="grow"><h1>${d.name}</h1><p class="muted">${d.breed} · ${d.age_text} · 보호자 ${d.owner_name} <span class="tiny">(샘플)</span></p>
-        <p style="margin-top:6px">${open.length ? html`<span class="badge b-todo">진행할 업무 ${open.length}건</span>` : html`<span class="badge b-done">열린 업무 없음</span>`} ${d.consent_at ? '' : html`<span class="badge b-pending">${icon('lock')} 동의 미확인 · 공개 불가</span>`}</p></div>
+        <p style="margin-top:6px">${stayBadge(d)} ${open.length ? html`<span class="badge b-todo">진행할 업무 ${open.length}건</span>` : html`<span class="badge b-done">열린 업무 없음</span>`} ${d.consent_at ? '' : html`<span class="badge b-pending">${icon('lock')} 동의 미확인 · 공개 불가</span>`}</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${d.attending ? html`<a class="btn" href="#/record/new?dog=${d.id}">${icon('pen')} 돌봄 기록 작성</a>` : html`<button class="btn" disabled title="퇴원 처리된 반려견에는 새 기록을 남길 수 없습니다">${icon('pen')} 돌봄 기록 작성</button>`}
         <button class="btn secondary" id="goto-tasks">후속 업무 확인 (${open.length})</button><button class="btn secondary" id="edit">프로필 수정</button>
         ${staff.role === '관리자' ? (d.attending ? html`<button class="btn ghost" id="discharge">퇴원 처리</button>` : (d.discharged && !d.purged_at ? html`<button class="btn ghost" id="readmit">재등록 처리</button>` : '')) : ''}</div></div></div>
@@ -182,6 +182,7 @@ function profileModal(ctx, d) {
       <div class="row2"><div class="field"><label for="p-breed">견종 *</label><input class="input" id="p-breed" name="breed" value="${d.breed}" maxlength="40"></div>
         <div class="field"><label for="p-birth">생년월일 *</label><input class="input" id="p-birth" name="birth_date" type="date" value="${d.birth_date}"></div></div>
       <div class="field"><label for="p-owner">보호자 이름 *</label><input class="input" id="p-owner" name="owner_name" value="${d.owner_name}" maxlength="40"></div>
+      ${ctx.me.org_kind === 'hotel' ? stayFields(d) : ''}
       ${CTX_LABELS.map(([k, l]) => html`<div class="field"><label for="c-${k}">${l}</label><textarea class="input" style="min-height:60px" id="c-${k}" name="ctx_${k}" maxlength="300">${d.care_context[k] || ''}</textarea></div>`)}
       <div class="mf"><button type="button" class="btn secondary" data-close>취소</button><button class="btn" type="submit">저장</button></div></form>`.toString(),
     onMount(el, close) {
@@ -196,7 +197,7 @@ function profileModal(ctx, d) {
         const care_context = Object.fromEntries(CTX_LABELS.map(([k]) => [k, v[`ctx_${k}`]]));
         busy(f.querySelector('[type=submit]'), async () => {
           try {
-            await api.patchDog(d.id, { breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context });
+            await api.patchDog(d.id, { breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context, ...(ctx.me.org_kind === 'hotel' ? { stay_start: v.stay_start || null, stay_end: v.stay_end || null } : {}) });
             if (photo.blob) await api.uploadPhoto(d.id, photo.blob); else if (photo.remove) await api.deletePhoto(d.id);
             close(); toast('프로필을 저장했습니다.'); ctx.rerender();
           } catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); }
@@ -216,6 +217,7 @@ function registerDogModal(ctx) {
         <div class="field"><label for="r-breed">견종 *</label><input class="input" id="r-breed" name="breed" maxlength="40" placeholder="예: 푸들, 믹스견"></div></div>
       <div class="row2"><div class="field"><label for="r-birth">생년월일 *</label><input class="input" id="r-birth" name="birth_date" type="date"><p class="hint">정확한 날짜를 모르면 대략적인 날짜를 입력하세요.</p></div>
         <div class="field"><label for="r-owner">보호자 이름 *</label><input class="input" id="r-owner" name="owner_name" maxlength="40"></div></div>
+      ${ctx.me.org_kind === 'hotel' ? stayFields() : ''}
       <label class="check consent-check"><input type="checkbox" name="consent_confirmed"> 보호자에게 <b>사진 공유</b>와 <b>퇴원 후 3개월 뒤 삭제</b>에 대한 동의를 받았습니다. <span class="muted small">(체크하지 않으면 나중에 프로필에서 확인을 기록하기 전까지 공개할 수 없습니다)</span></label>
       <details class="field"><summary class="small">돌봄 참고사항 입력 (선택)</summary><div class="stack" style="margin-top:10px">
         <p class="callout">직원이 직접 확인한 내용만 입력하세요. AI가 추정해서 채우지 않습니다.</p>
@@ -236,7 +238,7 @@ function registerDogModal(ctx) {
         busy(f.querySelector('[type=submit]'), async () => {
           let dog;
           try {
-            dog = await api.createDog({ name: v.name.trim(), breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context, consent_confirmed: !!v.consent_confirmed });
+            dog = await api.createDog({ name: v.name.trim(), breed: v.breed.trim(), birth_date: v.birth_date, owner_name: v.owner_name.trim(), care_context, consent_confirmed: !!v.consent_confirmed, ...(ctx.me.org_kind === 'hotel' ? { stay_start: v.stay_start || null, stay_end: v.stay_end || null } : {}) });
           } catch (err) { if (err instanceof ApiError && err.errors.length) fieldErrors(f, err); else toast(err.message, 'error'); return; }
           let photoFailed = false;
           if (photo.blob) { try { await api.uploadPhoto(dog.id, photo.blob); } catch { photoFailed = true; } }

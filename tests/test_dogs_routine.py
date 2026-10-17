@@ -175,3 +175,42 @@ def test_migration_turns_old_hotel_org_into_hotel_routine(tmp_path):
     assert c.execute("SELECT kind FROM organizations WHERE id=2").fetchone()[0] == "daycare"
     assert c.execute("SELECT COUNT(*) FROM routine_blocks WHERE org_id=1").fetchone()[0] == 5
     assert c.execute("SELECT b.name FROM care_records r JOIN routine_blocks b ON b.id=r.block_id").fetchone()[0] == "굿나잇 체크"
+
+
+def _dog(client, hdr, **kw):
+    body = {"name": "새아이", "breed": "푸들", "birth_date": "2022-01-01", "owner_name": "누구", **kw}
+    return client.post("/api/dogs", json=body, headers=hdr)
+
+
+def _d(n):
+    from datetime import datetime, timedelta
+    from backend.database import KST
+    return (datetime.now(KST).date() + timedelta(days=n)).isoformat()
+
+
+def test_hotel_stay_period(client):
+    cl = next(d for d in client.get("/api/dogs", headers=OTHER_ORG).json() if d["name"] == "구름")
+    assert cl["stay_status"] == "staying" and cl["stay_nights"] == 3 and not cl["checkin_today"]
+    dash = client.get("/api/dashboard", headers=OTHER_ORG).json()
+    assert dash["stay"]["staying"] == 1 and dash["stay"]["checkout_today"] == 0
+    assert client.get("/api/dashboard", headers=MORNING).json()["stay"] is None          # 유치원은 숙박 요약 없음
+    ok = _dog(client, OTHER_ORG, stay_start=_d(0), stay_end=_d(0))
+    assert ok.status_code == 201 and ok.json()["checkin_today"] and ok.json()["checkout_today"] and ok.json()["stay_nights"] == 0
+    assert _dog(client, OTHER_ORG, name="둘", stay_start=_d(5), stay_end=_d(2)).status_code == 422
+    assert _dog(client, OTHER_ORG, name="셋", stay_start=_d(1)).status_code == 422
+    assert _dog(client, OTHER_ORG, name="넷", stay_start=_d(0), stay_end=_d(200)).status_code == 422
+    assert _dog(client, OTHER_ORG, name="다섯", stay_start="2026-13-01", stay_end="2026-13-02").status_code == 422
+    assert _dog(client, MORNING, stay_start=_d(0), stay_end=_d(1)).status_code == 422     # 유치원은 숙박 기간 불가
+
+
+def test_hotel_stay_patch_and_clear(client):
+    did = next(d["id"] for d in client.get("/api/dogs", headers=OTHER_ORG).json() if d["name"] == "구름")
+    r = client.patch(f"/api/dogs/{did}", json={"stay_start": _d(2), "stay_end": _d(4)}, headers=OTHER_ORG).json()
+    assert r["stay_status"] == "upcoming"
+    assert client.get("/api/dashboard", headers=OTHER_ORG).json()["stay"]["upcoming"] == 1
+    assert client.patch(f"/api/dogs/{did}", json={"stay_start": _d(2), "stay_end": _d(1)}, headers=OTHER_ORG).status_code == 422
+    r = client.patch(f"/api/dogs/{did}", json={"stay_start": None, "stay_end": None}, headers=OTHER_ORG).json()
+    assert r["stay_start"] is None and r["stay_status"] is None
+    assert client.patch(f"/api/dogs/{did}", json={"breed": "푸들"}, headers=OTHER_ORG).json()["breed"] == "푸들"
+    dog1 = client.get("/api/dogs", headers=MORNING).json()[0]["id"]
+    assert client.patch(f"/api/dogs/{dog1}", json={"stay_start": _d(0), "stay_end": _d(1)}, headers=MORNING).status_code == 422

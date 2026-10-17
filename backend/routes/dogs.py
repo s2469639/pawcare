@@ -10,7 +10,7 @@ from ..retention import RETENTION_MONTHS
 from datetime import datetime
 
 from ..database import add_months, get_db, now_iso, upload_dir
-from ..deps import current_staff, get_dog_or_404
+from ..deps import FieldError, current_staff, get_dog_or_404
 from ..schemas import DogCreate, DogPatch
 from .common import TASK_SELECT, dog_dict, task_dict, today_prefix
 from .media import attach_media
@@ -31,6 +31,30 @@ def _record_view(db, org_id: int, dog_id: int, scope: str):
             "SELECT id,title,acknowledgment_status,action_status FROM tasks WHERE source_record_id=? ORDER BY id",
             (rec["id"],))]
     return attach_media(db, rows)
+
+
+MAX_STAY_DAYS = 90
+
+
+def _check_stay(db, org_id: int, start, end):
+    """숙박 기간 검사: 호텔에서만, 입실일과 퇴실일은 함께, 퇴실일은 입실일 이후(최대 90일). 반환: (start, end)."""
+    if not start and not end:
+        return None, None
+    if db.execute("SELECT kind FROM organizations WHERE id=?", (org_id,)).fetchone()["kind"] != "hotel":
+        raise FieldError("stay_start", "숙박 기간은 호텔에서만 입력할 수 있습니다.")
+    if not start:
+        raise FieldError("stay_start", "입실일을 입력해 주세요.")
+    if not end:
+        raise FieldError("stay_end", "퇴실일을 입력해 주세요.")
+    try:
+        s, e = datetime.strptime(start, "%Y-%m-%d").date(), datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        raise FieldError("stay_start", "날짜 형식이 올바르지 않습니다(YYYY-MM-DD).")
+    if e < s:
+        raise FieldError("stay_end", "퇴실일은 입실일보다 빠를 수 없습니다.")
+    if (e - s).days > MAX_STAY_DAYS:
+        raise FieldError("stay_end", f"숙박 기간은 최대 {MAX_STAY_DAYS}일입니다.")
+    return start, end
 
 
 @router.get("")
@@ -85,7 +109,12 @@ def patch_dog(dog_id: int, body: DogPatch, staff=Depends(current_staff), db: sql
         data["care_context"] = json.dumps(merged, ensure_ascii=False)
     if "attending" in data and data["attending"] is not None:
         data["attending"] = int(data["attending"])
-    data = {k: v for k, v in data.items() if v is not None}
+    stay = None
+    if {"stay_start", "stay_end"} & body.model_fields_set:      # 둘 중 하나라도 보내면 둘 다 새 값으로 본다(null이면 지움)
+        stay = _check_stay(db, staff["org_id"], data.get("stay_start"), data.get("stay_end"))
+    data = {k: v for k, v in data.items() if v is not None and k not in ("stay_start", "stay_end")}
+    if stay is not None or {"stay_start", "stay_end"} & body.model_fields_set:
+        data["stay_start"], data["stay_end"] = stay
     if data:
         sets = ", ".join(f"{k}=?" for k in data)
         db.execute(f"UPDATE dogs SET {sets} WHERE id=?", (*data.values(), dog_id))
@@ -118,13 +147,14 @@ def create_dog(body: DogCreate, staff=Depends(current_staff), db: sqlite3.Connec
     org = staff["org_id"]
     if db.execute("SELECT 1 FROM dogs WHERE org_id=? AND name=? AND owner_name=?", (org, body.name, body.owner_name)).fetchone():
         raise HTTPException(409, f"이미 등록된 반려견입니다. ({body.name} · 보호자 {body.owner_name})")
+    stay_start, stay_end = _check_stay(db, org, body.stay_start, body.stay_end)
     ctx = {k: "" for k in ("meal", "sensitivity", "behavior", "owner_request", "other")}
     ctx.update(body.care_context or {})
     n = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=?", (org,)).fetchone()[0]
     cur = db.execute(
-        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,consent_at) VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,consent_at,stay_start,stay_end) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (org, body.name, body.breed, body.birth_date, AVATAR_COLORS[n % len(AVATAR_COLORS)], body.owner_name,
-         json.dumps(ctx, ensure_ascii=False), now_iso() if body.consent_confirmed else None))
+         json.dumps(ctx, ensure_ascii=False), now_iso() if body.consent_confirmed else None, stay_start, stay_end))
     return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (cur.lastrowid,)).fetchone())
 
 

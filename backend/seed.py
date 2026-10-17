@@ -96,6 +96,9 @@ def seed(conn: sqlite3.Connection) -> None:
          3, 1, "acknowledged", "completed", _t(11, 30), ack_by=1, ack_at=_t(11, 35),
          note="음수 확인 후 기록에 반영했습니다.", done=_t(11, 50))
     task(2, 6, r_cloud, "식사량 기록 확인", "점심 식사량 기록을 확인합니다.", 4, 4, "pending", "todo", _t(12, 5))
+    today = datetime.now(KST).date()
+    c.execute("UPDATE dogs SET stay_start=?, stay_end=? WHERE name='구름' AND org_id=2",
+              ((today - timedelta(days=1)).isoformat(), (today + timedelta(days=2)).isoformat()))   # 호텔 샘플: 어제 입실, 모레 퇴실
     ensure_routine(c)
     seed_calendar(c)
     seed_accounts(c)

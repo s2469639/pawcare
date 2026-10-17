@@ -24,6 +24,7 @@ export async function dashboardView(ctx) {
       <a class="stat" role="listitem" href="#/dashboard?filter=in_progress"><div class="label">${icon('half')} 조치 진행 중</div><div class="num">${c.in_progress}</div><div class="sub">건</div></a>
       <a class="stat" role="listitem" href="#/dashboard?filter=completed"><div class="label">${icon('check')} 완료된 업무</div><div class="num">${c.completed}</div><div class="sub">전체 ${c.total}건 중</div></a>
     </div>
+    ${dash.stay ? html`<p class="callout" style="margin-top:14px" role="status">${icon('dog')} 숙박 현황 · 숙박 중 <b>${dash.stay.staying}</b>마리 · 오늘 입실 <b>${dash.stay.checkin_today}</b> · 오늘 퇴실 <b>${dash.stay.checkout_today}</b> · 입실 예정 <b>${dash.stay.upcoming}</b></p>` : ''}
     <section class="section" aria-labelledby="rt"><div class="head"><h2 id="rt">오늘의 일과</h2><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${programLine(routine)}<a class="btn sm secondary" href="#/routine">구간별 기록 현황 ${icon('arrow')}</a></div></div>
       ${routineStrip(routine, null, { compact: true })}</section>
     <section class="section" aria-labelledby="up"><div class="head"><h2 id="up">다가오는 일정 <span class="muted small">7일 이내</span></h2><a class="btn sm secondary" href="#/calendar">캘린더 열기 ${icon('arrow')}</a></div>
