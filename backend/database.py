@@ -224,6 +224,14 @@ CREATE TABLE IF NOT EXISTS calendar_prep_items (
     sort_order INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cal_org ON calendar_events(org_id, start_date, end_date);
+CREATE TABLE IF NOT EXISTS staff_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_id INTEGER NOT NULL REFERENCES staff(id),
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_staff ON staff_notes(staff_id, updated_at);
 CREATE TABLE IF NOT EXISTS login_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT NOT NULL,
@@ -234,7 +242,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id, action_status);
 CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 """
 
-TABLES = ["calendar_prep_items", "calendar_events", "parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
+TABLES = ["staff_notes", "calendar_prep_items", "calendar_events", "parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
           "care_records", "routine_blocks", "dogs", "staff", "organizations"]
 
 

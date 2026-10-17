@@ -576,6 +576,24 @@ with sync_playwright() as p:
     errors[:] = [e for e in errors if "422" not in e]                       # 제목 없이 저장해 일부러 낸 422는 제외
     step("캘린더: 일정·준비 항목 추가(필수 오류), 직원 체크(확인자 기록), 보호자는 공개 일정과 보호자 준비물만 열람, 삭제")
 
+    # 내 메모: 본인에게만 보인다
+    pick("오전 담당자 · 한지우")
+    page.goto(f"{BASE}/#/notes"); expect(page.get_by_role("heading", name="내 메모")).to_be_visible()
+    page.get_by_role("button", name="메모 저장").click()
+    expect(page.locator("#ne")).to_be_visible()                                      # 빈 메모 오류
+    page.get_by_label("새 메모").fill("금요일 간식 재고 확인"); page.get_by_role("button", name="메모 저장").click()
+    expect(page.locator(".note", has_text="금요일 간식 재고 확인")).to_be_visible()
+    page.locator(".note").first.get_by_role("button", name="수정").click()
+    page.locator(".note textarea").fill("금요일 간식 재고 확인 (완료)"); page.locator(".note").get_by_role("button", name="저장").click()
+    expect(page.locator(".note", has_text="(완료)")).to_be_visible()
+    pick("관리자 · 정하은")
+    page.goto(f"{BASE}/#/notes"); expect(page.get_by_text("저장한 메모가 없습니다")).to_be_visible()   # 관리자도 남의 메모는 보이지 않는다
+    pick("오전 담당자 · 한지우")
+    page.goto(f"{BASE}/#/notes"); page.once("dialog", lambda d: d.accept())
+    page.locator(".note").first.get_by_role("button", name="삭제").click(); expect(page.get_by_text("저장한 메모가 없습니다")).to_be_visible()
+    errors[:] = [e for e in errors if "422" not in e]                       # 빈 메모로 일부러 낸 422는 제외
+    step("내 메모: 저장·수정·삭제(빈 메모 오류), 관리자도 다른 직원의 메모는 볼 수 없음")
+
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")
     pick("관리자 · 오하준")
