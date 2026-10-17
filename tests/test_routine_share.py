@@ -57,8 +57,8 @@ def test_photos_count_in_the_block_of_their_record_only(client):
 def test_share_status_is_org_scoped(client):
     up(client, png(), dogs="1")
     org2 = blocks(client, OTHER_ORG)
-    assert org2["점심·휴식"]["dogs_shared"] == 0
-    d = detail(client, "점심·휴식", OTHER_ORG)
+    assert org2["굿나잇 체크"]["dogs_shared"] == 0
+    d = detail(client, "굿나잇 체크", OTHER_ORG)
     assert [x["name"] for x in d["dogs"]] == ["구름"] and d["share"]["dogs_total"] == 1 and d["share"]["dogs_pending"] == 0
 
 

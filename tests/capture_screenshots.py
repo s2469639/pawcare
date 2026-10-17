@@ -133,6 +133,12 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/parent/calendar"); expect(page.get_by_role("heading", name="우리 반 일정")).to_be_visible(); page.wait_for_timeout(600); shot("41-calendar-parent", True)
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
 
+    # 호텔: 업종별 일과 템플릿(야간 인계)
+    page.locator("#who").select_option(label="관리자 · 오하준"); page.wait_for_timeout(900)
+    page.goto(f"{BASE}/#/routine"); expect(page.locator(".rblock", has_text="굿나잇 체크")).to_be_visible()
+    page.locator(".rblock", has_text="저녁 식사·배변").click(); expect(page.locator(".handoff")).to_contain_text("저녁 → 야간 담당자"); page.wait_for_timeout(500); shot("43-hotel-routine", True)
+    page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
+
     # 퇴원 처리(관리자) → 삭제 예정 안내 → 재등록
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
     page.goto(f"{BASE}/#/dogs/3"); expect(page.get_by_role("button", name="퇴원 처리")).to_be_visible()

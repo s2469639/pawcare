@@ -57,11 +57,16 @@ def routine(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_d
     if default is None:   # 영업시간 밖: 오늘 가장 최근에 기록이 있는 구간(없으면 첫 구간)을 보여준다
         with_rec = [b for b in blocks if b["last_at"]]
         default = max(with_rec, key=lambda b: b["last_at"])["id"] if with_rec else (blocks[0]["id"] if blocks else None)
-    title, detail = PROGRAMS.get(now.weekday(), ("주말", "정규 프로그램 없음"))
+    kind = db.execute("SELECT kind FROM organizations WHERE id=?", (org,)).fetchone()["kind"]
+    # 요일별 예시 프로그램은 유치원 전용이다(호텔은 오늘의 캘린더 일정만 보여준다)
+    program = None
+    if kind == "daycare":
+        title, detail = PROGRAMS.get(now.weekday(), ("주말", "정규 프로그램 없음"))
+        program = {"title": title, "detail": detail, "weekday": "월화수목금토일"[now.weekday()]}
     return {"date": now.date().isoformat(), "now_time": hhmm, "open": current is not None,
             "current_block_id": current, "default_block_id": default, "blocks": blocks,
             "today_events": [{k: e[k] for k in ("id", "title", "kind", "start_time", "end_time")} for e in today_events(db, org)],
-            "program": {"title": title, "detail": detail, "weekday": "월화수목금토일"[now.weekday()]}}
+            "org_kind": kind, "program": program}
 
 
 @router.get("/{block_id}")

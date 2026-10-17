@@ -20,7 +20,7 @@ def reset(conn: sqlite3.Connection) -> None:
 
 def seed(conn: sqlite3.Connection) -> None:
     c = conn
-    c.execute("INSERT INTO organizations(name) VALUES ('해든 도그 유치원'),('달빛 펫호텔')")
+    c.execute("INSERT INTO organizations(name,kind) VALUES ('해든 도그 유치원','daycare'),('달빛 펫호텔','hotel')")
     c.executemany(
         "INSERT INTO staff(org_id,name,role) VALUES (?,?,?)",
         [(1, "한지우", "오전 담당자"), (1, "서민재", "오후 담당자"), (1, "정하은", "관리자"), (2, "오하준", "관리자")],

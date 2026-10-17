@@ -24,6 +24,7 @@ const KIND_KO = { program: '프로그램', event: '행사', closed: '휴무', no
 /** 오늘 등록된 캘린더 일정이 있으면 그것을, 없으면 요일별 예시 프로그램을 보여준다. */
 export const programLine = (r) => (r.today_events?.length
   ? html`<span class="program">${icon('cal')} 오늘의 일정 · ${r.today_events.map((e) => html`<a href="#/calendar?month=${r.date.slice(0, 7)}&day=${r.date}"><b>${e.title}</b></a> (${KIND_KO[e.kind]}${e.start_time ? ` ${e.start_time}` : ''}) `)}</span>`
+  : !r.program ? ''
   : html`<span class="program">${icon('spark')} 오늘의 프로그램 · ${r.program.weekday}요일 <b>${r.program.title}</b> — ${r.program.detail}</span>`);
 
 export async function routineView(ctx) {

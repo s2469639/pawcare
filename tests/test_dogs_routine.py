@@ -147,3 +147,31 @@ def test_profile_photo_requires_login_and_matching_org_or_guardian(client):
     assert client.get(url, headers=PARENT_BORI).status_code == 200          # 보리의 보호자
     assert client.get(url, headers=PARENT_TOFU).status_code == 404          # 다른 집 보호자
     assert client.get(url, headers=MORNING).headers["cache-control"].startswith("private")
+
+
+def test_hotel_gets_hotel_routine_and_daycare_unchanged(client):
+    hotel = client.get("/api/routine", headers=OTHER_ORG).json()
+    assert hotel["org_kind"] == "hotel" and hotel["program"] is None          # 요일별 예시 프로그램은 유치원 전용
+    names = [b["name"] for b in hotel["blocks"]]
+    assert names == ["아침 인사·컨디션 체크", "오전 산책·놀이", "낮 휴식·식사", "저녁 식사·배변", "굿나잇 체크"]
+    assert [b["name"] for b in hotel["blocks"] if b["handoff_label"]] == ["아침 인사·컨디션 체크", "저녁 식사·배변"]
+    assert [b["name"] for b in hotel["blocks"] if b["share_prompt"]] == ["아침 인사·컨디션 체크", "굿나잇 체크"]
+    day = client.get("/api/routine", headers=MORNING).json()
+    assert day["org_kind"] == "daycare" and day["program"]["title"] and len(day["blocks"]) == 6
+
+
+def test_migration_turns_old_hotel_org_into_hotel_routine(tmp_path):
+    import sqlite3
+    from backend import database
+    c = sqlite3.connect(tmp_path / "old.db"); c.row_factory = sqlite3.Row
+    c.executescript(database.SCHEMA.replace(",\n    kind TEXT NOT NULL DEFAULT 'daycare' CHECK (kind IN ('daycare','hotel'))", ""))
+    c.execute("INSERT INTO organizations(name) VALUES ('달빛 펫호텔'),('해든')")
+    c.execute("INSERT INTO staff(org_id,name,role) VALUES (1,'a','관리자')")
+    c.execute("INSERT INTO dogs(org_id,name,breed,birth_date,owner_name) VALUES (1,'구름','푸들','2022-04-10','a')")
+    c.execute("INSERT INTO care_records(org_id,dog_id,author_id,record_type,content,observed_at,created_at) VALUES (1,1,1,'식사','x','2026-01-01T20:30:00','2026-01-01T20:30:00')")
+    database.init_db(c)
+    # init_db가 이미 일과를 채워 두었으므로(구버전 상태 재현) 유치원 일과로 되돌려 마이그레이션을 다시 검증한다
+    assert c.execute("SELECT kind FROM organizations WHERE id=1").fetchone()[0] == "hotel"
+    assert c.execute("SELECT kind FROM organizations WHERE id=2").fetchone()[0] == "daycare"
+    assert c.execute("SELECT COUNT(*) FROM routine_blocks WHERE org_id=1").fetchone()[0] == 5
+    assert c.execute("SELECT b.name FROM care_records r JOIN routine_blocks b ON b.id=r.block_id").fetchone()[0] == "굿나잇 체크"

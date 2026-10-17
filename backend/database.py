@@ -51,7 +51,8 @@ def get_db():
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS organizations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'daycare' CHECK (kind IN ('daycare','hotel'))
 );
 CREATE TABLE IF NOT EXISTS staff (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,6 +261,16 @@ ROUTINE_TEMPLATE = [
 ]   # (이름, 시작, 끝, 설명, 기본 기록 유형, 인계 표시, 사진 공유 시점 여부)
 SHARE_BLOCK_NAMES = ("점심·휴식", "하원 준비")
 
+# 호텔 일과 템플릿: 등·하원 대신 아침 인사와 굿나잇 체크가 있고, 저녁→야간 담당자로 인계한다. (같은 튜플 형식)
+HOTEL_ROUTINE_TEMPLATE = [
+    ("아침 인사·컨디션 체크", "07:00", "09:00", "밤사이 상태(식욕·배변·수면)를 확인하고 아침 인사 사진을 남깁니다. 야간 담당자가 남긴 인계를 확인하는 시간입니다.", "특이사항", "야간 → 아침 담당자", 1),
+    ("오전 산책·놀이", "09:00", "12:00", "배변 산책과 놀이를 진행하고 활동을 기록합니다.", "활동", None, 0),
+    ("낮 휴식·식사", "12:00", "16:00", "점심 식사량과 낮 휴식을 기록합니다. 투약이 있으면 이 시간에 확인합니다.", "식사", None, 0),
+    ("저녁 식사·배변", "16:00", "19:00", "저녁 식사량과 배변 상태를 기록하고 야간 담당자에게 넘길 내용을 정리합니다.", "식사", "저녁 → 야간 담당자", 0),
+    ("굿나잇 체크", "19:00", "22:00", "잠자리를 정리하고 상태를 확인한 뒤 굿나잇 사진을 보호자에게 공유합니다.", "특이사항", None, 1),
+]
+ROUTINE_TEMPLATES = {"daycare": ROUTINE_TEMPLATE, "hotel": HOTEL_ROUTINE_TEMPLATE}
+
 
 def block_for(blocks: list, observed_at: str):
     """기록 시각(YYYY-MM-DDTHH:MM…)이 속한 일과 구간 id. 영업시간 밖이면 None."""
@@ -272,12 +283,12 @@ def block_for(blocks: list, observed_at: str):
 
 def ensure_routine(conn: sqlite3.Connection) -> None:
     """일과 템플릿이 없는 유치원에 채우고, 구간이 비어 있는 기록에 구간을 연결한다(멱등)."""
-    for org in conn.execute("SELECT id FROM organizations").fetchall():
+    for org in conn.execute("SELECT id, kind FROM organizations").fetchall():
         if conn.execute("SELECT 1 FROM routine_blocks WHERE org_id=?", (org["id"],)).fetchone() is None:
             conn.executemany(
                 "INSERT INTO routine_blocks(org_id,name,start_time,end_time,description,record_type,handoff_label,share_prompt,sort_order)"
                 " VALUES (?,?,?,?,?,?,?,?,?)",
-                [(org["id"], *t, i) for i, t in enumerate(ROUTINE_TEMPLATE)])
+                [(org["id"], *t, i) for i, t in enumerate(ROUTINE_TEMPLATES[org["kind"]])])
         blocks = conn.execute("SELECT * FROM routine_blocks WHERE org_id=? ORDER BY sort_order", (org["id"],)).fetchall()
         for r in conn.execute("SELECT id, observed_at FROM care_records WHERE org_id=? AND block_id IS NULL", (org["id"],)).fetchall():
             bid = block_for(blocks, r["observed_at"])
@@ -307,6 +318,13 @@ def init_db(conn: sqlite3.Connection) -> None:
         # 샘플 반려견은 시연을 위해 동의를 받은 것으로 둔다(직접 등록한 반려견은 프로필에서 동의 확인 기록 필요)
         conn.execute(f"UPDATE dogs SET consent_at=? WHERE name IN ({','.join('?' * len(SAMPLE_PHOTOS))}) AND consent_at IS NULL",
                      (now_iso(), *SAMPLE_PHOTOS))
+    if "kind" not in {r["name"] for r in conn.execute("PRAGMA table_info(organizations)")}:
+        conn.execute("ALTER TABLE organizations ADD COLUMN kind TEXT NOT NULL DEFAULT 'daycare'")
+        # 이전 DB: 이름에 '호텔'이 들어간 유치원은 호텔로 보고, 유치원 일과 구간을 호텔 일과로 바꾼다(기록은 시각으로 다시 연결)
+        for o in conn.execute("SELECT id FROM organizations WHERE name LIKE '%호텔%'").fetchall():
+            conn.execute("UPDATE organizations SET kind='hotel' WHERE id=?", (o["id"],))
+            conn.execute("UPDATE care_records SET block_id=NULL WHERE org_id=?", (o["id"],))
+            conn.execute("DELETE FROM routine_blocks WHERE org_id=?", (o["id"],))
     ensure_routine(conn)
     if not had_calendar:      # 캘린더 도입 전 DB: 샘플 유치원이 있으면 샘플 일정을 한 번만 채운다(직접 지워도 다시 생기지 않는다)
         from .seed import seed_calendar
