@@ -42,6 +42,7 @@ export async function routineView(ctx) {
   root.innerHTML = html`
     <div class="page-head"><div><h1>오늘의 일과</h1><p>${fmtDateKo(r.date)} · 구간별로 기록 현황과 인계 시점을 확인합니다.</p></div><div>${programLine(r)}</div></div>
     ${r.open ? '' : html`<p class="callout" style="margin-bottom:14px">지금은 영업시간(${r.blocks[0].start_time}–${r.blocks.at(-1).end_time}) 밖입니다. 오늘 가장 최근에 기록이 있는 구간을 보여드려요. 다른 구간을 눌러 확인할 수 있습니다.</p>`}
+    ${r.dogs_present === 0 ? html`<p class="callout clay" style="margin-bottom:14px" role="status">오늘 등원 체크한 아이가 없어서 구간별 대상이 비어 있습니다. <a href="#/attendance"><b>오늘의 출석부</b></a>에서 등원 체크를 하면 이 화면에 나타납니다(기록을 쓰면 자동으로 출석 처리됩니다).</p>` : ''}
     ${routineStrip(r, sel)}
     <section class="section" aria-labelledby="bt"><div class="head"><div><h2 id="bt">${b.name} <span class="muted small">${range(b)}</span></h2><p class="small muted" style="margin-top:2px">${b.description}</p></div>
       <a class="btn" href="#/record/new?block=${b.id}">${icon('pen')} 이 구간 기록 작성</a></div>

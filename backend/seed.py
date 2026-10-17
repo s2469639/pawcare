@@ -96,6 +96,10 @@ def seed(conn: sqlite3.Connection) -> None:
          3, 1, "acknowledged", "completed", _t(11, 30), ack_by=1, ack_at=_t(11, 35),
          note="음수 확인 후 기록에 반영했습니다.", done=_t(11, 50))
     task(2, 6, r_cloud, "식사량 기록 확인", "점심 식사량 기록을 확인합니다.", 4, 4, "pending", "todo", _t(12, 5))
+    c.execute("UPDATE dogs SET attend_days='0,1,2,3,4' WHERE org_id=1")                        # 유치원 샘플: 평일(월~금) 이용
+    for d in c.execute("SELECT id, org_id FROM dogs").fetchall():                                  # 샘플: 모두 오늘 등원한 상태로 시작
+        c.execute("INSERT INTO attendance(org_id,dog_id,day,status,checkin_at,created_at) VALUES (?,?,?,?,?,?)",
+                  (d["org_id"], d["id"], datetime.now(KST).date().isoformat(), "present", _t(8, 30), now_iso()))
     today = datetime.now(KST).date()
     c.execute("UPDATE dogs SET stay_start=?, stay_end=? WHERE name='구름' AND org_id=2",
               ((today - timedelta(days=1)).isoformat(), (today + timedelta(days=2)).isoformat()))   # 호텔 샘플: 어제 입실, 모레 퇴실

@@ -67,6 +67,7 @@ def dog_dict(r) -> dict:
     d["attending"] = bool(d["attending"])
     d["age_text"] = age_text(d["birth_date"])
     d["discharged"] = bool(d.get("discharged_at"))
+    d["attend_days"] = sorted({int(x) for x in (d.get("attend_days") or "").split(",") if x.strip().isdigit()})
     d.update(stay_fields(d.get("stay_start"), d.get("stay_end")))
     d["purge_days_left"] = None
     if d.get("purge_after") and not d.get("purged_at"):

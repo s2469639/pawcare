@@ -7,6 +7,7 @@ from ..database import KST, connect, get_db
 from ..deps import current_staff
 from .auth import require_demo
 from ..seed import reset
+from .attendance import day_view
 from .common import TASK_SELECT, dog_dict, stay_fields, task_dict, today_prefix
 from datetime import datetime
 
@@ -40,7 +41,8 @@ def dashboard(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get
         " COALESCE(SUM(action_status='completed'),0) AS completed,"
         " COALESCE(SUM(acknowledgment_status='pending' AND action_status!='completed' AND assignee_id=?),0) AS mine_pending,"
         " COUNT(*) AS total FROM tasks WHERE org_id=?", (staff["id"], org)).fetchone()
-    dogs = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=? AND attending=1", (org,)).fetchone()[0]
+    att = day_view(db, org, datetime.now(KST).date())["summary"]
+    dogs = att["present"]                                  # 오늘 돌봄 중 = 오늘 등원 체크한 아이
     tasks = db.execute(TASK_SELECT + " WHERE t.org_id=? ORDER BY rank_order, prio_order, t.created_at DESC", (org,))
     wd = "월화수목금토일"[datetime.now(KST).weekday()]
     stay = None
@@ -52,5 +54,5 @@ def dashboard(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get
             stay["upcoming"] += f["stay_status"] == "upcoming"
             stay["checkin_today"] += f["checkin_today"]
             stay["checkout_today"] += f["checkout_today"]
-    return {"date": today_prefix(), "weekday": wd, "attending_dogs": dogs, "counts": dict(c), "stay": stay,
+    return {"date": today_prefix(), "weekday": wd, "attending_dogs": dogs, "attendance": att, "counts": dict(c), "stay": stay,
             "tasks": [task_dict(t) for t in tasks]}

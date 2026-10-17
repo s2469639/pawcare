@@ -9,6 +9,7 @@ import { recordNewView, aiView } from './records.js';
 import { tasksView, taskDetailView } from './tasks.js';
 import { parentView } from './parent.js';
 import { notesView } from './notes.js';
+import { attendanceView } from './attendance.js';
 import { routineView } from './routine.js';
 import { calendarView, parentCalendarView } from './calendar.js';
 
@@ -29,6 +30,7 @@ const routes = [
   [/^\/tasks$/, tasksView, { role: 'staff', shell: true, nav: 'tasks' }],
   [/^\/tasks\/(\d+)$/, taskDetailView, { role: 'staff', shell: true, nav: 'tasks' }],
   [/^\/ai(?:\/(\d+))?$/, aiView, { role: 'staff', shell: true, nav: 'ai' }],
+  [/^\/attendance$/, attendanceView, { role: 'staff', shell: true, nav: 'attendance' }],
   [/^\/notes$/, notesView, { role: 'staff', shell: true, nav: 'notes' }],
   [/^\/calendar$/, calendarView, { role: 'staff', shell: true, nav: 'calendar' }],
   [/^\/routine(?:\/(\d+))?$/, routineView, { role: 'staff', shell: true, nav: 'routine' }],
@@ -69,7 +71,7 @@ async function demoSwitch(accountId) {
 }
 
 const NAV = [
-  ['dashboard', '/dashboard', '오늘의 업무', 'home'], ['routine', '/routine', '오늘의 일과', 'clock'], ['calendar', '/calendar', '캘린더', 'cal'], ['tasks', '/tasks', '업무 인계', 'list'],
+  ['dashboard', '/dashboard', '오늘의 업무', 'home'], ['attendance', '/attendance', '오늘의 출석부', 'check'], ['routine', '/routine', '오늘의 일과', 'clock'], ['calendar', '/calendar', '캘린더', 'cal'], ['tasks', '/tasks', '업무 인계', 'list'],
   ['dogs', '/dogs', '반려견', 'dog'], ['record', '/record/new', '돌봄 기록 작성', 'pen'], ['ai', '/ai', 'AI 업무 정리', 'spark'], ['notes', '/notes', '내 메모', 'pen'],
 ];
 

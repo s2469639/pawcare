@@ -109,6 +109,8 @@ def patch_dog(dog_id: int, body: DogPatch, staff=Depends(current_staff), db: sql
         data["care_context"] = json.dumps(merged, ensure_ascii=False)
     if "attending" in data and data["attending"] is not None:
         data["attending"] = int(data["attending"])
+    if data.get("attend_days") is not None:
+        data["attend_days"] = ",".join(str(x) for x in data["attend_days"])
     stay = None
     if {"stay_start", "stay_end"} & body.model_fields_set:      # 둘 중 하나라도 보내면 둘 다 새 값으로 본다(null이면 지움)
         stay = _check_stay(db, staff["org_id"], data.get("stay_start"), data.get("stay_end"))
@@ -152,9 +154,10 @@ def create_dog(body: DogCreate, staff=Depends(current_staff), db: sqlite3.Connec
     ctx.update(body.care_context or {})
     n = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=?", (org,)).fetchone()[0]
     cur = db.execute(
-        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,consent_at,stay_start,stay_end) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO dogs(org_id,name,breed,birth_date,avatar_color,owner_name,care_context,consent_at,stay_start,stay_end,attend_days) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (org, body.name, body.breed, body.birth_date, AVATAR_COLORS[n % len(AVATAR_COLORS)], body.owner_name,
-         json.dumps(ctx, ensure_ascii=False), now_iso() if body.consent_confirmed else None, stay_start, stay_end))
+         json.dumps(ctx, ensure_ascii=False), now_iso() if body.consent_confirmed else None, stay_start, stay_end,
+         ",".join(str(x) for x in (body.attend_days or []))))
     return dog_dict(db.execute("SELECT * FROM dogs WHERE id=?", (cur.lastrowid,)).fetchone())
 
 

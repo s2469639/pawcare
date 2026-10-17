@@ -361,3 +361,16 @@ a.cal-cell:focus-visible { outline: 2px solid var(--clay-deep); outline-offset: 
   .cal-ev { font-size: 0; height: 6px; padding: 0; }
   .row2 { grid-template-columns: 1fr; }
 }
+
+/* 출석부 */
+.att-list { list-style: none; margin: 0; padding: 0; }
+.att-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.att-row:last-child { border-bottom: 0; }
+.att-info { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.att-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.days { display: flex; gap: 6px; flex-wrap: wrap; }
+.days label { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 38px; border: 1px solid #cfccc0; border-radius: 8px; cursor: pointer; background: var(--white); font-weight: 500; }
+.days input { position: absolute; opacity: 0; }
+.days label:has(input:checked) { background: var(--ink); color: var(--ivory); border-color: var(--ink); }
+.days label:has(input:focus-visible) { outline: 2px solid var(--clay-deep); outline-offset: 2px; }
+@media (max-width: 640px) { .att-row { grid-template-columns: 1fr; } .att-actions { justify-content: flex-start; } }

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..database import KST, get_db
 from ..deps import current_staff
+from .attendance import day_view, present_dog_ids
 from .calendar import today_events
 from .common import TASK_SELECT, task_dict, today_prefix
 
@@ -44,14 +45,14 @@ def routine(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_d
     now = datetime.now(KST)
     hhmm = now.strftime("%H:%M")
     blocks = _blocks(db, org)
-    total = db.execute("SELECT COUNT(*) FROM dogs WHERE org_id=? AND attending=1", (org,)).fetchone()[0]
+    present = present_dog_ids(db, org, today_prefix())          # 구간의 대상은 오늘 등원 체크한(출석) 아이
+    total = len(present)
     for b in blocks:
         r = db.execute("SELECT COUNT(*) AS n, COUNT(DISTINCT dog_id) AS dogs, MAX(observed_at) AS last FROM care_records "
                        "WHERE block_id=? AND observed_at LIKE ?", (b["id"], today)).fetchone()
         b.update(record_count=r["n"], dog_count=r["dogs"], last_at=r["last"], dogs_total=total, share_prompt=bool(b["share_prompt"]))
         if b["share_prompt"]:
-            att = {x["id"] for x in db.execute("SELECT id FROM dogs WHERE org_id=? AND attending=1", (org,))}
-            b["dogs_shared"] = sum(1 for d, st in _photo_stats(db, org, b["id"], today).items() if d in att and st["shared"])
+            b["dogs_shared"] = sum(1 for d, st in _photo_stats(db, org, b["id"], today).items() if d in present and st["shared"])
     current = next((b["id"] for b in blocks if b["start_time"] <= hhmm < b["end_time"]), None)
     default = current
     if default is None:   # 영업시간 밖: 오늘 가장 최근에 기록이 있는 구간(없으면 첫 구간)을 보여준다
@@ -66,7 +67,8 @@ def routine(staff=Depends(current_staff), db: sqlite3.Connection = Depends(get_d
     return {"date": now.date().isoformat(), "now_time": hhmm, "open": current is not None,
             "current_block_id": current, "default_block_id": default, "blocks": blocks,
             "today_events": [{k: e[k] for k in ("id", "title", "kind", "start_time", "end_time")} for e in today_events(db, org)],
-            "org_kind": kind, "program": program}
+            "org_kind": kind, "program": program, "dogs_present": total,
+            "attendance": day_view(db, org, now.date())["summary"]}
 
 
 @router.get("/{block_id}")
@@ -77,7 +79,10 @@ def block_detail(block_id: int, staff=Depends(current_staff), db: sqlite3.Connec
         raise HTTPException(404, "일과 구간을 찾을 수 없습니다.")
     dogs = []
     stats = _photo_stats(db, org, block_id, today) if b["share_prompt"] else {}
+    present = present_dog_ids(db, org, today_prefix())
     for d in db.execute("SELECT id,name,breed,photo,avatar_color FROM dogs WHERE org_id=? AND attending=1 ORDER BY id", (org,)):
+        if d["id"] not in present:
+            continue
         recs = [dict(r) for r in db.execute(
             "SELECT r.id,r.record_type,r.structured_value,r.content,r.observed_at,s.name AS author_name FROM care_records r "
             "JOIN staff s ON s.id=r.author_id WHERE r.dog_id=? AND r.block_id=? AND r.observed_at LIKE ? "

@@ -133,6 +133,23 @@ with sync_playwright() as p:
     page.goto(f"{BASE}/#/parent/calendar"); expect(page.get_by_role("heading", name="우리 반 일정")).to_be_visible(); page.wait_for_timeout(600); shot("41-calendar-parent", True)
     page.locator("#who").select_option(label="관리자 · 정하은"); page.wait_for_timeout(900)
 
+    # 오늘의 출석부: 일부는 등원 전, 한 마리는 결석, 한 마리는 하원 완료
+    page.goto(f"{BASE}/#/attendance"); expect(page.get_by_role("heading", name="오늘의 출석부")).to_be_visible()
+    att = lambda n: page.locator(".att-row", has_text=n)
+    def waiting(n):
+        att(n).get_by_role("button", name="되돌리기").click(); expect(att(n).get_by_role("button", name="되돌리기")).to_have_count(0)
+        if att(n).get_by_role("button", name="오늘 추가").count(): att(n).get_by_role("button", name="오늘 추가").click()
+        expect(att(n).get_by_role("button", name="결석")).to_be_visible()
+    for n in ("두부", "모카", "콩이"): waiting(n)
+    att("콩이").get_by_role("button", name="결석").click(); dlg = page.get_by_role("dialog")
+    dlg.get_by_label("보호자가 미리 연락했어요").check(); dlg.get_by_label("사유 메모").fill("병원 방문"); dlg.get_by_role("button", name="결석 처리").click()
+    expect(att("콩이")).to_contain_text("결석")
+    att("보리").get_by_role("button", name="하원 처리").click(); dlg = page.get_by_role("dialog")
+    dlg.get_by_label("데려간 사람").fill("보호자 본인"); dlg.get_by_label("하원 전달사항").fill("오후에 물을 잘 마셨어요"); dlg.get_by_role("button", name="하원 처리").click()
+    expect(att("보리")).to_contain_text("하원"); page.wait_for_timeout(500); shot("46-attendance", True)
+    page.get_by_role("button", name="예정된 아이 모두 등원 체크").click(); expect(page.get_by_role("button", name="예정된 아이 모두 등원 체크")).to_have_count(0)
+    att("콩이").get_by_role("button", name="등원 체크").click(); expect(att("콩이")).to_contain_text("등원")
+
     # 호텔: 업종별 일과 템플릿(야간 인계)
     page.locator("#who").select_option(label="관리자 · 오하준"); page.wait_for_timeout(900)
     page.goto(f"{BASE}/#/routine"); expect(page.locator(".rblock", has_text="굿나잇 체크")).to_be_visible()

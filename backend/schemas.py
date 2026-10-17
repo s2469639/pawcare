@@ -75,14 +75,25 @@ class ActionCreate(BaseModel):
     _s = field_validator("note", mode="before")(_strip)
 
 
+def _days(v):
+    if v is None:
+        return v
+    if any((not isinstance(x, int)) or x < 0 or x > 6 for x in v):
+        raise ValueError("이용 요일은 0(월)~6(일) 사이의 값이어야 합니다.")
+    return sorted(set(v))
+
+
 class DogPatch(BaseModel):
     breed: Optional[str] = Field(default=None, min_length=1, max_length=40)
     birth_date: Optional[str] = None
     owner_name: Optional[str] = Field(default=None, min_length=1, max_length=40)
     attending: Optional[bool] = None
     care_context: Optional[dict[str, str]] = None
+    attend_days: Optional[list[int]] = None  # 이용 요일(0=월 … 6=일). 빈 목록이면 지운다
     stay_start: Optional[str] = None        # 호텔 숙박 기간(null로 보내면 지운다). 호텔 여부·순서는 라우트에서 검사
     stay_end: Optional[str] = None
+
+    _ad = field_validator("attend_days")(_days)
 
     @field_validator("birth_date")
     @classmethod
@@ -142,6 +153,7 @@ class DogCreate(BaseModel):
     birth_date: str
     owner_name: str = Field(min_length=1, max_length=40)
     care_context: Optional[dict[str, str]] = None
+    attend_days: Optional[list[int]] = None
     stay_start: Optional[str] = None
     stay_end: Optional[str] = None
     consent_confirmed: bool = False          # 보호자 동의(사진 공유, 퇴원 후 3개월 뒤 삭제)를 받았음을 직원이 확인
@@ -149,3 +161,7 @@ class DogCreate(BaseModel):
     _s = field_validator("name", "breed", "owner_name", mode="before")(_strip)
     _b = field_validator("birth_date")(_check_birth)
     _c = field_validator("care_context")(_check_ctx)
+    _ad = field_validator("attend_days")(_days)
+
+
+

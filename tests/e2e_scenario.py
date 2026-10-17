@@ -281,7 +281,7 @@ with sync_playwright() as p:
     expect(page.get_by_role("heading", name="오늘의 일과", level=1)).to_be_visible()
     page.locator(".rblock", has_text="점심·휴식").click()
     expect(page.locator("#bt")).to_contain_text("점심·휴식")
-    expect(page.get_by_text("이 구간에 기록이 있는 반려견")).to_contain_text("2/6")      # 보리·밤이 / 새로 등록한 초코 포함 6마리
+    expect(page.get_by_text("이 구간에 기록이 있는 반려견")).to_contain_text("2/5")      # 보리·밤이 / 오늘 출석한 5마리(새로 등록한 초코는 아직 등원 체크 전이라 제외)
     rows = page.locator(".timeline li")
     expect(rows.first).to_contain_text("아직 기록 없음")                                  # 기록 없는 아이가 위
     shot("14-routine-lunch")
@@ -615,6 +615,41 @@ with sync_playwright() as p:
     page.keyboard.press("Escape")
     errors[:] = [e for e in errors if "422" not in e]
     step("호텔 숙박 기간: 입실·퇴실일 등록(잘못된 기간 오류), 숙박 현황·배지, 유치원에는 입력칸 없음")
+
+    # 오늘의 출석부: 출석 예정 → 등원 체크 → 하원, 결석, 이용 요일
+    pick("오전 담당자 · 한지우")
+    page.goto(f"{BASE}/#/attendance"); expect(page.get_by_role("heading", name="오늘의 출석부")).to_be_visible()
+    expect(page.locator(".stat", has_text="출석").first).to_be_visible()
+    def att_row(name): return page.locator(".att-row", has_text=name)
+    def reset_to_waiting(name):
+        att_row(name).get_by_role("button", name="되돌리기").click()
+        expect(att_row(name).get_by_role("button", name="되돌리기")).to_have_count(0)
+        if att_row(name).get_by_role("button", name="오늘 추가").count():                 # 요일이 아닌 날(주말 등)에는 직접 추가
+            att_row(name).get_by_role("button", name="오늘 추가").click()
+        expect(att_row(name).get_by_role("button", name="결석")).to_be_visible()
+    reset_to_waiting("보리")
+    att_row("보리").get_by_role("button", name="등원 체크").first.click()
+    expect(att_row("보리")).to_contain_text("등원")
+    att_row("보리").get_by_role("button", name="하원 처리").click()
+    dlg = page.get_by_role("dialog"); dlg.get_by_label("데려간 사람").fill("김서연"); dlg.get_by_label("하원 전달사항").fill("물을 잘 마셨어요")
+    dlg.get_by_role("button", name="하원 처리").click()
+    expect(att_row("보리")).to_contain_text("하원"); expect(att_row("보리")).to_contain_text("김서연")
+    shot("46-attendance")
+    reset_to_waiting("두부")
+    att_row("두부").get_by_role("button", name="결석").click()
+    dlg = page.get_by_role("dialog"); dlg.get_by_label("보호자가 미리 연락했어요").check(); dlg.get_by_label("사유 메모").fill("병원 방문")
+    dlg.get_by_role("button", name="결석 처리").click()
+    expect(att_row("두부")).to_contain_text("결석 · 사전 연락 있음")
+    page.goto(f"{BASE}/#/routine"); expect(page.get_by_role("heading", name="오늘의 일과")).to_be_visible()
+    expect(page.locator(".timeline li", has_text="두부")).to_have_count(0)                  # 결석한 아이는 구간 대상이 아니다
+    expect(page.locator(".timeline li", has_text="보리")).to_have_count(1)
+    page.goto(f"{BASE}/#/attendance")
+    att_row("두부").get_by_role("button", name="등원 체크").click()                         # 결석 후 도착해도 출석으로 바꿀 수 있다
+    expect(att_row("두부")).to_contain_text("등원")
+    page.goto(f"{BASE}/#/dogs/1"); page.locator("#edit").click()
+    dlg = page.get_by_role("dialog"); expect(dlg.locator('[name=attend_days][value="0"]')).to_be_checked(); dlg.locator('[name=attend_days][value="5"]').check(); dlg.get_by_role("button", name="저장").click()
+    expect(page.locator(".dog-head")).to_contain_text("이용 요일 월·화·수·목·금·토")
+    step("출석부: 등원 체크·하원(데려간 사람·전달사항)·결석(사전 연락)·직접 추가, 결석한 아이는 일과 대상에서 제외, 이용 요일 설정")
 
     # 11. 다른 유치원 격리
     page.goto(f"{BASE}/#/dashboard")

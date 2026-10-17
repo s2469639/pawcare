@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..database import block_for, get_db, now_iso, now_precise
 from ..deps import FieldError, current_staff, get_dog_or_404, get_staff_in_org
 from ..schemas import ApprovalBody, RecordCreate
+from .attendance import mark_present
 from .common import today_prefix
 from .media import attach_media
 
@@ -58,6 +59,8 @@ def create_record(body: RecordCreate, staff=Depends(current_staff), db: sqlite3.
         "INSERT INTO care_records(org_id,dog_id,author_id,record_type,structured_value,content,observed_at,created_at,block_id)"
         " VALUES (?,?,?,?,?,?,?,?,?)",
         (staff["org_id"], body.dog_id, author_id, body.record_type, sv, content, observed, now, block_id))
+    if observed[:10] == today_prefix():       # 등원 체크 없이 오늘 기록을 쓰면 자동으로 출석 처리한다(기록이 막히지 않게)
+        mark_present(db, staff["org_id"], body.dog_id, observed[:10])
     return attach_media(db, [dict(db.execute(BASE + "WHERE r.id=?", (cur.lastrowid,)).fetchone())])[0]
 
 

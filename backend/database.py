@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS dogs (
     purge_after TEXT,
     purged_at TEXT,
     stay_start TEXT,
-    stay_end TEXT
+    stay_end TEXT,
+    attend_days TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS care_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +228,22 @@ CREATE TABLE IF NOT EXISTS calendar_prep_items (
     sort_order INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_cal_org ON calendar_events(org_id, start_date, end_date);
+CREATE TABLE IF NOT EXISTS attendance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    dog_id INTEGER NOT NULL REFERENCES dogs(id),
+    day TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('expected','present','absent')),
+    checkin_at TEXT,
+    checkout_at TEXT,
+    pickup_by TEXT,
+    pickup_note TEXT,
+    absent_contacted INTEGER NOT NULL DEFAULT 0,
+    absent_note TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (dog_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_att_day ON attendance(org_id, day);
 CREATE TABLE IF NOT EXISTS staff_notes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     staff_id INTEGER NOT NULL REFERENCES staff(id),
@@ -245,7 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_org ON tasks(org_id, action_status);
 CREATE INDEX IF NOT EXISTS idx_records_dog ON care_records(dog_id, observed_at);
 """
 
-TABLES = ["staff_notes", "calendar_prep_items", "calendar_events", "parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
+TABLES = ["attendance", "staff_notes", "calendar_prep_items", "calendar_events", "parent_reads", "media_shares", "media_dogs", "media", "sessions", "login_attempts", "invites", "guardian_dogs", "accounts", "task_action_logs", "tasks",
           "care_records", "routine_blocks", "dogs", "staff", "organizations"]
 
 
@@ -299,6 +316,7 @@ def ensure_routine(conn: sqlite3.Connection) -> None:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
+    had_attendance = conn.execute("SELECT 1 FROM sqlite_master WHERE name='attendance'").fetchone() is not None
     had_calendar = conn.execute("SELECT 1 FROM sqlite_master WHERE name='calendar_events'").fetchone() is not None
     conn.executescript(SCHEMA)
     if "block_id" not in {r["name"] for r in conn.execute("PRAGMA table_info(care_records)")}:
@@ -320,6 +338,11 @@ def init_db(conn: sqlite3.Connection) -> None:
         # 샘플 반려견은 시연을 위해 동의를 받은 것으로 둔다(직접 등록한 반려견은 프로필에서 동의 확인 기록 필요)
         conn.execute(f"UPDATE dogs SET consent_at=? WHERE name IN ({','.join('?' * len(SAMPLE_PHOTOS))}) AND consent_at IS NULL",
                      (now_iso(), *SAMPLE_PHOTOS))
+    if "attend_days" not in {r["name"] for r in conn.execute("PRAGMA table_info(dogs)")}:
+        conn.execute("ALTER TABLE dogs ADD COLUMN attend_days TEXT NOT NULL DEFAULT ''")
+        # 샘플 유치원 반려견은 시연을 위해 평일(월~금) 이용으로 둔다. 직접 등록한 아이는 요일 미설정(자동 출석 예정 없음)
+        conn.execute(f"UPDATE dogs SET attend_days='0,1,2,3,4' WHERE name IN ({','.join('?' * len(SAMPLE_PHOTOS))}) "
+                     "AND org_id IN (SELECT id FROM organizations WHERE name NOT LIKE '%호텔%')", tuple(SAMPLE_PHOTOS))
     if "kind" not in {r["name"] for r in conn.execute("PRAGMA table_info(organizations)")}:
         conn.execute("ALTER TABLE organizations ADD COLUMN kind TEXT NOT NULL DEFAULT 'daycare'")
         # 이전 DB: 이름에 '호텔'이 들어간 유치원은 호텔로 보고, 유치원 일과 구간을 호텔 일과로 바꾼다(기록은 시각으로 다시 연결)
@@ -328,6 +351,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE care_records SET block_id=NULL WHERE org_id=?", (o["id"],))
             conn.execute("DELETE FROM routine_blocks WHERE org_id=?", (o["id"],))
     ensure_routine(conn)
+    if not had_attendance:    # 출석부 도입 전 DB: 재원 중인 아이를 오늘 출석으로 두어 일과 화면이 비지 않게 한다
+        today = datetime.now(KST).date().isoformat()
+        conn.execute("INSERT OR IGNORE INTO attendance(org_id,dog_id,day,status,checkin_at,created_at) "
+                     "SELECT org_id, id, ?, 'present', ?, ? FROM dogs WHERE attending=1", (today, now_iso(), now_iso()))
     if not had_calendar:      # 캘린더 도입 전 DB: 샘플 유치원이 있으면 샘플 일정을 한 번만 채운다(직접 지워도 다시 생기지 않는다)
         from .seed import seed_calendar
         seed_calendar(conn)

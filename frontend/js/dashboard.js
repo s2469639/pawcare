@@ -19,7 +19,7 @@ export async function dashboardView(ctx) {
     <div class="page-head"><div><h1>오늘의 업무</h1>
       <p>${staff.name}님(${staff.role}) · 내게 배정된 확인 대기 업무 <b>${c.mine_pending}</b>건</p></div></div>
     <div class="stats" role="list">
-      <div class="stat" role="listitem"><div class="label">${icon('dog')} 오늘 돌봄 중인 반려견</div><div class="num">${dash.attending_dogs}</div><div class="sub">마리</div></div>
+      <div class="stat" role="listitem"><div class="label">${icon('dog')} 오늘 돌봄 중인 반려견</div><div class="num">${dash.attending_dogs}</div><div class="sub">마리 · <a href="#/attendance">출석 예정 ${dash.attendance.expected}</a></div></div>
       <a class="stat ${c.needs_ack ? 'alert' : ''}" role="listitem" href="#/dashboard?filter=pending"><div class="label">${icon('clock')} 확인이 필요한 업무</div><div class="num">${c.needs_ack}</div><div class="sub">내게 배정 ${c.mine_pending}건 · 조치 필요 ${c.todo}건</div></a>
       <a class="stat" role="listitem" href="#/dashboard?filter=in_progress"><div class="label">${icon('half')} 조치 진행 중</div><div class="num">${c.in_progress}</div><div class="sub">건</div></a>
       <a class="stat" role="listitem" href="#/dashboard?filter=completed"><div class="label">${icon('check')} 완료된 업무</div><div class="num">${c.completed}</div><div class="sub">전체 ${c.total}건 중</div></a>
